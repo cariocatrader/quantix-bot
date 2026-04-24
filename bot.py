@@ -233,7 +233,7 @@ def run(c):
         c.message.chat.id,
         open(gif, "rb"),
         caption=f"""
-📊 SINAL GERADO:
+📊 RESULTADO FINAL:
 
 📊 Paridade: {BANDERAS[par]} {par}
 ⏱ Timeframe: M1
