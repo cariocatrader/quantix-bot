@@ -244,7 +244,7 @@ def run(c):
     bot.send_message(
         c.message.chat.id,
         f"""
-📊 FINAL
+📊 RESULTADO FINAL:
 
 💱 {par}
 🎯 Resultado: {res}
