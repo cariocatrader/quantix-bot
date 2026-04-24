@@ -1,0 +1,6 @@
+pyTelegramBotAPI
+requests
+pytz
+pillow
+matplotlib
+numpy
