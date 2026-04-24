@@ -187,7 +187,7 @@ def run(c):
     bot.send_message(
         c.message.chat.id,
         f"""
-📊 SINAL PRO
+📊 SINAL ENCONTRADO 📊 
 
 💱 {par}
 🎯 Direção: {sinal_final}
