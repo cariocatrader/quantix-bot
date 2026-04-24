@@ -33,30 +33,32 @@ GIF_WIN = "win.gif"
 GIF_LOSS = "loss.gif"
 
 # ==============================
-# SINCRONIZAÇÃO PROFISSIONAL
+# TEMPO PROFISSIONAL
 # ==============================
 
-def esperar_candle_fechar():
+def entrada():
 
     agora = datetime.now(timezone)
 
-    prox = agora.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    base = agora.replace(second=0, microsecond=0)
 
-    alvo = prox + timedelta(seconds=3)
+    if agora.second > 0:
+        base += timedelta(minutes=1)
 
-    diff = (alvo - datetime.now(timezone)).total_seconds()
+    return base + timedelta(minutes=1)
 
-    if diff > 0:
-        time.sleep(diff)
+def gale_time(ent):
+
+    return ent + timedelta(minutes=1)
 
 # ==============================
 # API
 # ==============================
 
-def buscar_candles(paridade):
+def candles(par):
 
     try:
-        url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=15&apikey={API_KEY}"
+        url = f"https://api.twelvedata.com/time_series?symbol={par}&interval=1min&outputsize=10&apikey={API_KEY}"
         r = requests.get(url, timeout=10)
         data = r.json()
 
@@ -69,72 +71,41 @@ def buscar_candles(paridade):
         return None
 
 # ==============================
-# CAMADA 1 (3 candles)
+# ANÁLISE REAL (3 candles)
 # ==============================
 
-def micro_tendencia(candles):
+def sinal(c):
 
-    ultimos = candles[1:4]
+    ult = c[:3]
 
-    altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
-    baixas = 3 - altas
+    alta = sum(float(x["close"]) > float(x["open"]) for x in ult)
+    baixa = 3 - alta
 
-    if altas >= 2:
+    if alta >= 2:
         return "CALL"
-    if baixas >= 2:
+
+    if baixa >= 2:
         return "PUT"
 
     return None
 
 # ==============================
-# CAMADA 2 (FILTRO 5 candles)
+# RESULTADO REAL
 # ==============================
 
-def macro_tendencia(candles):
+def result(par, dir):
 
-    ultimos = candles[1:6]
+    c = candles(par)
 
-    altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
-    baixas = 5 - altas
-
-    if altas >= 3:
-        return "CALL"
-    if baixas >= 3:
-        return "PUT"
-
-    return None
-
-# ==============================
-# DECISÃO FINAL (PRO)
-# ==============================
-
-def gerar_sinal(candles):
-
-    micro = micro_tendencia(candles)
-    macro = macro_tendencia(candles)
-
-    if micro == macro:
-        return micro
-
-    return None
-
-# ==============================
-# RESULTADO REAL (CANDLE FECHADO)
-# ==============================
-
-def resultado(paridade, direcao):
-
-    candles = buscar_candles(paridade)
-
-    if not candles:
+    if not c:
         return None
 
-    candle = candles[1]  # fechado
+    candle = c[1]
 
     if float(candle["close"]) > float(candle["open"]):
-        return "WIN" if direcao == "CALL" else "LOSS"
+        return "WIN" if dir == "CALL" else "LOSS"
     else:
-        return "WIN" if direcao == "PUT" else "LOSS"
+        return "WIN" if dir == "PUT" else "LOSS"
 
 # ==============================
 # START
@@ -144,11 +115,11 @@ def resultado(paridade, direcao):
 def start(m):
 
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🚀 Gerar Sinal PRO", callback_data="gerar"))
+    kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
 
     bot.send_message(
         m.chat.id,
-        "👋 Quantix PRO\n\nSistema de análise avançada ativo.",
+        "👋 Bem-vindo ao Quantix PRO\n\nClique abaixo para iniciar.",
         reply_markup=kb
     )
 
@@ -157,7 +128,7 @@ def start(m):
 # ==============================
 
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
-def paridades(c):
+def pares(c):
 
     bot.delete_message(c.message.chat.id, c.message.message_id)
 
@@ -169,7 +140,7 @@ def paridades(c):
     bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=kb)
 
 # ==============================
-# EXECUÇÃO PRO
+# EXECUÇÃO
 # ==============================
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
@@ -179,35 +150,39 @@ def run(c):
 
     bot.delete_message(c.message.chat.id, c.message.message_id)
 
-    # ================= ANALISE =================
+    # ================= ANALISE (30s mínimo) =================
 
     msg = bot.send_animation(
         c.message.chat.id,
         open(GIF_ANALISE, "rb"),
-        caption="🔎 Análise profissional em andamento..."
+        caption="🔎 Analisando mercado... (30s mínimo)"
     )
 
-    sinal = None
-    candles = None
+    sinal_final = None
+    candles_data = None
 
     start = time.time()
 
-    while time.time() - start < 60:
+    # 🔥 FORÇA 30 SEGUNDOS DE ANÁLISE
+    while time.time() - start < 30:
 
-        candles = buscar_candles(par)
+        candles_data = candles(par)
 
-        if candles:
-            sinal = gerar_sinal(candles)
-            if sinal:
-                break
+        if candles_data:
+            sinal_final = sinal(candles_data)
 
         time.sleep(2)
 
     bot.delete_message(c.message.chat.id, msg.message_id)
 
-    if not sinal:
+    if not sinal_final:
         bot.send_message(c.message.chat.id, "❌ Sem tendência forte no mercado.")
         return
+
+    # ================= HORÁRIOS =================
+
+    ent = entrada()
+    gale = gale_time(ent)
 
     bot.send_message(
         c.message.chat.id,
@@ -215,33 +190,39 @@ def run(c):
 📊 SINAL PRO
 
 💱 {par}
-🎯 Direção: {sinal}
-⏱ Base: micro + macro tendência
+🎯 Direção: {sinal_final}
+
+⏱ Entrada: {ent.strftime('%H:%M')}
+⚠️ GALE 1: {gale.strftime('%H:%M')}
+
+📈 Análise: 3 candles + confirmação
 """
     )
 
-    # ================= ESPERA REAL =================
+    # ================= ESPERA =================
 
-    esperar_candle_fechar()
+    time.sleep(60)
 
-    res = resultado(par, sinal)
+    res = result(par, sinal_final)
 
-    gale = 0
+    gale_used = 0
 
     if res == "LOSS":
 
-        gale = 1
+        gale_used = 1
 
         bot.send_message(
             c.message.chat.id,
-            "⚠️ LOSS detectado\n🔄 GALE 1 ativado..."
+            f"⚠️ LOSS detectado\n🔄 Entrando em GALE 1 às {gale.strftime('%H:%M')}..."
         )
 
-        esperar_candle_fechar()
+        time.sleep(60)
 
-        res = resultado(par, sinal)
+        res = result(par, sinal_final)
 
     # ================= RESULTADO FINAL =================
+
+    time.sleep(3)
 
     gif = GIF_WIN if res == "WIN" else GIF_LOSS
 
@@ -252,7 +233,7 @@ def run(c):
     )
 
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🚀 Novo Sinal PRO", callback_data="gerar"))
+    kb.add(InlineKeyboardButton("🚀 Novo Sinal", callback_data="gerar"))
 
     bot.send_message(
         c.message.chat.id,
@@ -261,12 +242,12 @@ def run(c):
 
 💱 {par}
 🎯 Resultado: {res}
-🔥 Gale: {gale}
+🔥 Gale usado: {gale_used}
 """,
         reply_markup=kb
     )
 
 # ==============================
 
-print("BOT PRO ONLINE")
+print("BOT ONLINE")
 bot.infinity_polling()
