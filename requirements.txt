@@ -1,0 +1,6 @@
+pyTelegramBotAPI
+requests
+pandas
+selenium
+webdriver-manager
+pillow
