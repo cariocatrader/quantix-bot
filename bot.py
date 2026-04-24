@@ -37,7 +37,6 @@ GIF_LOSS = "loss.gif"
 # ==============================
 
 def entrada():
-
     agora = datetime.now(timezone)
 
     base = agora.replace(second=0, microsecond=0)
@@ -47,16 +46,17 @@ def entrada():
 
     return base + timedelta(minutes=1)
 
-def gale_time(ent):
+def fechamento_candle(base):
+    return base + timedelta(minutes=1, seconds=5)
 
-    return ent + timedelta(minutes=1)
+def gale_entrada(base):
+    return base + timedelta(minutes=1)
 
 # ==============================
 # API
 # ==============================
 
 def candles(par):
-
     try:
         url = f"https://api.twelvedata.com/time_series?symbol={par}&interval=1min&outputsize=10&apikey={API_KEY}"
         r = requests.get(url, timeout=10)
@@ -71,7 +71,7 @@ def candles(par):
         return None
 
 # ==============================
-# ANÁLISE REAL (3 candles)
+# SINAL (3 candles)
 # ==============================
 
 def sinal(c):
@@ -119,7 +119,7 @@ def start(m):
 
     bot.send_message(
         m.chat.id,
-        "👋 Bem-vindo ao Quantix PRO\n\nClique abaixo para iniciar.",
+        "👋 Bem-vindo ao Quantix PRO",
         reply_markup=kb
     )
 
@@ -150,62 +150,65 @@ def run(c):
 
     bot.delete_message(c.message.chat.id, c.message.message_id)
 
-    # ================= ANALISE (30s mínimo) =================
+    # ================= ANALISE =================
 
     msg = bot.send_animation(
         c.message.chat.id,
         open(GIF_ANALISE, "rb"),
-        caption="🔎 Analisando mercado... (30s mínimo)"
+        caption="🔎 Analisando mercado (30s)..."
     )
 
     sinal_final = None
-    candles_data = None
 
     start = time.time()
 
-    # 🔥 FORÇA 30 SEGUNDOS DE ANÁLISE
     while time.time() - start < 30:
 
-        candles_data = candles(par)
+        data = candles(par)
 
-        if candles_data:
-            sinal_final = sinal(candles_data)
+        if data:
+            sinal_final = sinal(data)
 
         time.sleep(2)
 
     bot.delete_message(c.message.chat.id, msg.message_id)
 
     if not sinal_final:
-        bot.send_message(c.message.chat.id, "❌ Sem tendência forte no mercado.")
+        bot.send_message(c.message.chat.id, "❌ Sem tendência forte.")
         return
 
-    # ================= HORÁRIOS =================
+    # ================= TEMPOS =================
 
     ent = entrada()
-    gale = gale_time(ent)
+    gale_ent = gale_entrada(ent)
 
     bot.send_message(
         c.message.chat.id,
         f"""
-📊 SINAL ENCONTRADO 📊 
+📊 SINAL GERADO 
 
 💱 {par}
-🎯 Direção: {sinal_final}
+🎯 {sinal_final}
 
 ⏱ Entrada: {ent.strftime('%H:%M')}
-⚠️ GALE 1: {gale.strftime('%H:%M')}
-
-📈 Análise: 3 candles + confirmação
+⚠️ GALE 1: {gale_ent.strftime('%H:%M')}
 """
     )
 
-    # ================= ESPERA =================
+    # ================= RESULTADO 1 =================
 
-    time.sleep(60)
+    t1 = fechamento_candle(ent)
+
+    sleep1 = (t1 - datetime.now(timezone)).total_seconds()
+
+    if sleep1 > 0:
+        time.sleep(sleep1)
 
     res = result(par, sinal_final)
 
     gale_used = 0
+
+    # ================= GALE =================
 
     if res == "LOSS":
 
@@ -213,16 +216,19 @@ def run(c):
 
         bot.send_message(
             c.message.chat.id,
-            f"⚠️ LOSS detectado\n🔄 Entrando em GALE 1 às {gale.strftime('%H:%M')}..."
+            "⚠️ LOSS\n🔄 Entrando em GALE 1..."
         )
 
-        time.sleep(60)
+        t2 = fechamento_candle(gale_ent)
+
+        sleep2 = (t2 - datetime.now(timezone)).total_seconds()
+
+        if sleep2 > 0:
+            time.sleep(sleep2)
 
         res = result(par, sinal_final)
 
-    # ================= RESULTADO FINAL =================
-
-    time.sleep(3)
+    # ================= FINAL =================
 
     gif = GIF_WIN if res == "WIN" else GIF_LOSS
 
@@ -238,11 +244,11 @@ def run(c):
     bot.send_message(
         c.message.chat.id,
         f"""
-📊 RESULTADO FINAL
+📊 FINAL
 
 💱 {par}
 🎯 Resultado: {res}
-🔥 Gale usado: {gale_used}
+🔥 Gale: {gale_used}
 """,
         reply_markup=kb
     )
