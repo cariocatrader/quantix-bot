@@ -33,17 +33,12 @@ GIF_WIN = "win.gif"
 GIF_LOSS = "loss.gif"
 
 # ==============================
-# TEMPO
+# TEMPO CORRIGIDO
 # ==============================
 
 def entrada():
     agora = datetime.now(timezone)
-    base = agora.replace(second=0, microsecond=0)
-
-    if agora.second > 0:
-        base += timedelta(minutes=1)
-
-    return base + timedelta(minutes=1)
+    return agora.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
 def gale_entrada(ent):
     return ent + timedelta(minutes=1)
@@ -70,7 +65,7 @@ def candles(par, tf="1min", limit=20):
         return None
 
 # ==============================
-# RSI SIMPLES
+# RSI
 # ==============================
 
 def rsi(candles, period=14):
@@ -97,7 +92,7 @@ def rsi(candles, period=14):
     return 100 - (100 / (1 + rs))
 
 # ==============================
-# M15 TENDÊNCIA (PRINCIPAL)
+# M15
 # ==============================
 
 def tendencia_m15(c):
@@ -115,7 +110,7 @@ def tendencia_m15(c):
     return None
 
 # ==============================
-# M1 CONFIRMAÇÃO
+# M1
 # ==============================
 
 def tendencia_m1(c):
@@ -133,7 +128,7 @@ def tendencia_m1(c):
     return None
 
 # ==============================
-# SINAL FINAL (AJUSTADO)
+# SINAL
 # ==============================
 
 def sinal(par):
@@ -155,17 +150,13 @@ def sinal(par):
         "RSI": round(r, 2)
     }
 
-    # filtro leve RSI (não bloqueia tudo)
     if r > 80:
         t15 = "PUT" if t15 == "CALL" else t15
+
     if r < 20:
         t15 = "CALL" if t15 == "PUT" else t15
 
-    # decisão principal
-    if t15:
-        return t15, analise
-
-    return None, analise
+    return t15, analise
 
 # ==============================
 # RESULTADO
@@ -186,7 +177,7 @@ def result(par, dir):
         return "WIN" if dir == "PUT" else "LOSS"
 
 # ==============================
-# START
+# BOT
 # ==============================
 
 @bot.message_handler(commands=["start"])
@@ -196,10 +187,6 @@ def start(m):
     kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
 
     bot.send_message(m.chat.id, "👋 Quantix PRO", reply_markup=kb)
-
-# ==============================
-# PARIDADES
-# ==============================
 
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def pares(c):
@@ -213,10 +200,6 @@ def pares(c):
 
     bot.send_message(c.message.chat.id, "📊 Escolha:", reply_markup=kb)
 
-# ==============================
-# EXECUÇÃO
-# ==============================
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
 def run(c):
 
@@ -227,7 +210,7 @@ def run(c):
     msg = bot.send_animation(
         c.message.chat.id,
         open(GIF_ANALISE, "rb"),
-        caption="🔎 Analisando mercado..."
+        caption="🔎 Analisando..."
     )
 
     sig, analise = sinal(par)
@@ -235,18 +218,7 @@ def run(c):
     bot.delete_message(c.message.chat.id, msg.message_id)
 
     if not sig:
-        bot.send_message(
-            c.message.chat.id,
-            f"""
-📊 ANÁLISE
-
-M15: {analise['M15']}
-M1: {analise['M1']}
-RSI: {analise['RSI']}
-
-❌ Sem entrada no momento
-"""
-        )
+        bot.send_message(c.message.chat.id, "❌ Sem entrada")
         return
 
     ent = entrada()
@@ -260,13 +232,12 @@ RSI: {analise['RSI']}
 💱 {par}
 🎯 {sig}
 
-📈 ANÁLISE:
-M15: {analise['M15']}
-M1: {analise['M1']}
-RSI: {analise['RSI']}
+📈 M15: {analise['M15']}
+📈 M1: {analise['M1']}
+📊 RSI: {analise['RSI']}
 
 ⏱ Entrada: {ent.strftime('%H:%M')}
-⚠️ GALE 1: {gale_ent.strftime('%H:%M')}
+⚠️ GALE: {gale_ent.strftime('%H:%M')}
 """
     )
 
@@ -279,8 +250,6 @@ RSI: {analise['RSI']}
     if res == "LOSS":
 
         gale = 1
-
-        bot.send_message(c.message.chat.id, "⚠️ LOSS → GALE 1")
 
         time.sleep((fechamento(gale_ent) - datetime.now(timezone)).total_seconds())
 
@@ -300,16 +269,14 @@ RSI: {analise['RSI']}
     bot.send_message(
         c.message.chat.id,
         f"""
-📊 RESULTADO FINAL:
+📊 RESULTADO FINAL
 
 💱 {par}
-🎯 Resultado: {res}
+🎯 {res}
 🔥 GALE: {gale}
 """,
         reply_markup=kb
     )
-
-# ==============================
 
 print("BOT ONLINE")
 bot.infinity_polling()
