@@ -7,9 +7,6 @@ import pytz
 import os
 
 # ==============================
-# CONFIG
-# ==============================
-
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
 
@@ -33,9 +30,6 @@ GIF_WIN = "win.gif"
 GIF_LOSS = "loss.gif"
 
 # ==============================
-# TEMPO CORRIGIDO
-# ==============================
-
 def entrada():
     agora = datetime.now(timezone)
     return agora.replace(second=0, microsecond=0) + timedelta(minutes=1)
@@ -43,14 +37,8 @@ def entrada():
 def gale_entrada(ent):
     return ent + timedelta(minutes=1)
 
-def fechamento(base):
-    return base + timedelta(minutes=1, seconds=5)
-
 # ==============================
-# API
-# ==============================
-
-def candles(par, tf="1min", limit=20):
+def candles(par, tf="1min", limit=10):
     try:
         url = f"https://api.twelvedata.com/time_series?symbol={par}&interval={tf}&outputsize={limit}&apikey={API_KEY}"
         r = requests.get(url, timeout=10)
@@ -65,129 +53,62 @@ def candles(par, tf="1min", limit=20):
         return None
 
 # ==============================
-# RSI
-# ==============================
-
-def rsi(candles, period=14):
-
-    closes = [float(c["close"]) for c in candles[:period+1]]
-
-    gain = 0
-    loss = 0
-
-    for i in range(1, len(closes)):
-
-        diff = closes[i] - closes[i-1]
-
-        if diff > 0:
-            gain += diff
-        else:
-            loss += abs(diff)
-
-    if loss == 0:
-        return 100
-
-    rs = gain / loss
-
-    return 100 - (100 / (1 + rs))
-
-# ==============================
-# M15
-# ==============================
-
-def tendencia_m15(c):
-
-    ult = c[:5]
-
-    altas = sum(float(x["close"]) > float(x["open"]) for x in ult)
-    baixas = 5 - altas
-
-    if altas > baixas:
-        return "CALL"
-    elif baixas > altas:
-        return "PUT"
-
-    return None
-
-# ==============================
-# M1
-# ==============================
-
-def tendencia_m1(c):
-
-    ult = c[:3]
-
-    altas = sum(float(x["close"]) > float(x["open"]) for x in ult)
-    baixas = 3 - altas
-
-    if altas >= 2:
-        return "CALL"
-    if baixas >= 2:
-        return "PUT"
-
-    return None
-
-# ==============================
-# SINAL
-# ==============================
-
 def sinal(par):
 
-    m1 = candles(par, "1min", 10)
     m15 = candles(par, "15min", 10)
+    m1 = candles(par, "1min", 10)
 
-    if not m1 or not m15:
+    if not m15 or not m1:
         return None, None
 
-    t15 = tendencia_m15(m15)
-    t1 = tendencia_m1(m1)
+    t15 = "CALL" if sum(float(c["close"]) > float(c["open"]) for c in m15[:5]) > 2 else "PUT"
+    t1 = "CALL" if sum(float(c["close"]) > float(c["open"]) for c in m1[:3]) >= 2 else "PUT"
 
-    r = rsi(m1)
-
-    analise = {
-        "M15": t15,
-        "M1": t1,
-        "RSI": round(r, 2)
-    }
-
-    if r > 80:
-        t15 = "PUT" if t15 == "CALL" else t15
-
-    if r < 20:
-        t15 = "CALL" if t15 == "PUT" else t15
-
-    return t15, analise
+    return t15, {"M15": t15, "M1": t1}
 
 # ==============================
-# RESULTADO
-# ==============================
+def esperar_horario(target_time):
 
-def result(par, dir):
+    while True:
 
-    c = candles(par)
+        agora = datetime.now(timezone)
 
-    if not c:
-        return None
+        if agora >= target_time:
+            break
 
-    candle = c[1]
-
-    if float(candle["close"]) > float(candle["open"]):
-        return "WIN" if dir == "CALL" else "LOSS"
-    else:
-        return "WIN" if dir == "PUT" else "LOSS"
+        time.sleep(0.5)
 
 # ==============================
-# BOT
-# ==============================
+def resultado(par, direcao):
 
+    for _ in range(5):  # retry seguro
+
+        c = candles(par)
+
+        if c and len(c) > 1:
+
+            candle = c[1]
+
+            if float(candle["close"]) > float(candle["open"]):
+                return "WIN" if direcao == "CALL" else "LOSS"
+
+            else:
+                return "WIN" if direcao == "PUT" else "LOSS"
+
+        time.sleep(1)
+
+    return "LOSS"
+
+# ==============================
 @bot.message_handler(commands=["start"])
 def start(m):
 
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
 
-    bot.send_message(m.chat.id, "👋 Quantix PRO", reply_markup=kb)
+    bot.send_message(m.chat.id, "👋 Olá seja bem vindo (a) ao Quantix PRO", reply_markup=kb)
 
+# ==============================
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def pares(c):
 
@@ -198,8 +119,9 @@ def pares(c):
     for p in PARIDADES:
         kb.add(InlineKeyboardButton(f"{BANDERAS[p]} {p}", callback_data=f"p_{p}"))
 
-    bot.send_message(c.message.chat.id, "📊 Escolha:", reply_markup=kb)
+    bot.send_message(c.message.chat.id, "📊 Escolha a paridade para operar:", reply_markup=kb)
 
+# ==============================
 @bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
 def run(c):
 
@@ -207,18 +129,16 @@ def run(c):
 
     bot.delete_message(c.message.chat.id, c.message.message_id)
 
-    msg = bot.send_animation(
+    bot.send_animation(
         c.message.chat.id,
         open(GIF_ANALISE, "rb"),
-        caption="🔎 Analisando..."
+        caption="🔎 Analisando mercado..."
     )
 
-    sig, analise = sinal(par)
-
-    bot.delete_message(c.message.chat.id, msg.message_id)
+    sig, info = sinal(par)
 
     if not sig:
-        bot.send_message(c.message.chat.id, "❌ Sem entrada")
+        bot.send_message(c.message.chat.id, "❌ Sem sinal")
         return
 
     ent = entrada()
@@ -232,28 +152,37 @@ def run(c):
 💱 {par}
 🎯 {sig}
 
-📈 M15: {analise['M15']}
-📈 M1: {analise['M1']}
-📊 RSI: {analise['RSI']}
+📈 M15: {info['M15']}
+📈 M1: {info['M1']}
 
 ⏱ Entrada: {ent.strftime('%H:%M')}
 ⚠️ GALE: {gale_ent.strftime('%H:%M')}
 """
     )
 
-    time.sleep((fechamento(ent) - datetime.now(timezone)).total_seconds())
+    # ==============================
+    # RESULTADO 1
+    # ==============================
 
-    res = result(par, sig)
+    esperar_horario(ent + timedelta(minutes=1, seconds=5))
+
+    res = resultado(par, sig)
 
     gale = 0
+
+    # ==============================
+    # GALE
+    # ==============================
 
     if res == "LOSS":
 
         gale = 1
 
-        time.sleep((fechamento(gale_ent) - datetime.now(timezone)).total_seconds())
+        bot.send_message(c.message.chat.id, "⚠️ LOSS → GALE 1")
 
-        res = result(par, sig)
+        esperar_horario(gale_ent + timedelta(minutes=1, seconds=5))
+
+        res = resultado(par, sig)
 
     gif = GIF_WIN if res == "WIN" else GIF_LOSS
 
@@ -277,6 +206,8 @@ def run(c):
 """,
         reply_markup=kb
     )
+
+# ==============================
 
 print("BOT ONLINE")
 bot.infinity_polling()
