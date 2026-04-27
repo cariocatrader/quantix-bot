@@ -27,10 +27,16 @@ PARIDADES = [
 ]
 
 BANDERAS = {
-    "EUR/USD":"🇪🇺🇺🇸","GBP/USD":"🇬🇧🇺🇸","USD/JPY":"🇺🇸🇯🇵",
-    "AUD/USD":"🇦🇺🇺🇸","USD/CAD":"🇺🇸🇨🇦","USD/CHF":"🇺🇸🇨🇭",
-    "NZD/USD":"🇳🇿🇺🇸","EUR/GBP":"🇪🇺🇬🇧",
-    "EUR/JPY":"🇪🇺🇯🇵","GBP/JPY":"🇬🇧🇯🇵"
+    "EUR/USD":"🇪🇺🇺🇸",
+    "GBP/USD":"🇬🇧🇺🇸",
+    "USD/JPY":"🇺🇸🇯🇵",
+    "AUD/USD":"🇦🇺🇺🇸",
+    "USD/CAD":"🇺🇸🇨🇦",
+    "USD/CHF":"🇺🇸🇨🇭",
+    "NZD/USD":"🇳🇿🇺🇸",
+    "EUR/GBP":"🇪🇺🇬🇧",
+    "EUR/JPY":"🇪🇺🇯🇵",
+    "GBP/JPY":"🇬🇧🇯🇵"
 }
 
 # ==============================
@@ -55,6 +61,7 @@ def buscar_candles(paridade):
     except Exception as e:
         print("Erro buscar candles:", e)
         return None
+
 
 # ==============================
 # ANALISE
@@ -82,8 +89,9 @@ def analisar(candles):
 
     return None
 
+
 # ==============================
-# PRÓXIMA ENTRADA
+# ENTRADA
 # ==============================
 
 def proxima_entrada_real():
@@ -97,9 +105,6 @@ def proxima_entrada_real():
 
     return entrada
 
-# ==============================
-# ESPERA
-# ==============================
 
 def esperar_ate(timestamp):
 
@@ -112,60 +117,61 @@ def esperar_ate(timestamp):
 
         time.sleep(0.2)
 
+
 # ==============================
-# RESULTADO REAL FINAL
+# RESULTADO REAL (CORRIGIDO)
 # ==============================
 
 def resultado_real(paridade, direcao, horario):
 
-    candles = buscar_candles(paridade)
+    tentativas = 0
 
-    if not candles:
-        return "LOSS"
+    while tentativas < 5:
 
-    candle_correto = None
+        candles = buscar_candles(paridade)
 
-    for c in candles:
+        if not candles:
+            tentativas += 1
+            time.sleep(2)
+            continue
 
-        candle_time = datetime.strptime(
-            c["datetime"],
-            "%Y-%m-%d %H:%M:%S"
-        )
+        for c in candles:
 
-        candle_time = pytz.utc.localize(candle_time)
-        candle_time = candle_time.astimezone(timezone)
+            candle_time = datetime.strptime(
+                c["datetime"],
+                "%Y-%m-%d %H:%M:%S"
+            )
 
-        if candle_time.strftime("%H:%M") == horario:
+            candle_time = pytz.utc.localize(candle_time)
+            candle_time = candle_time.astimezone(timezone)
 
-            candle_correto = c
-            break
+            if candle_time.strftime("%H:%M") == horario:
 
-    # fallback seguro
-    if not candle_correto:
+                open_price = float(c["open"])
+                close_price = float(c["close"])
 
-        print("Candle não encontrado — usando fallback")
+                if close_price > open_price:
+                    candle_result = "CALL"
 
-        if len(candles) > 1:
-            candle_correto = candles[1]
-        else:
-            candle_correto = candles[0]
+                elif close_price < open_price:
+                    candle_result = "PUT"
 
-    open_price = float(candle_correto["open"])
-    close_price = float(candle_correto["close"])
+                else:
+                    return "DOJI"
 
-    if close_price > open_price:
-        candle_result = "CALL"
+                if candle_result == direcao:
+                    return "WIN"
 
-    elif close_price < open_price:
-        candle_result = "PUT"
+                return "LOSS"
 
-    else:
-        return "DOJI"
+        tentativas += 1
 
-    if candle_result == direcao:
-        return "WIN"
+        time.sleep(3)
+
+    print("Candle não encontrado")
 
     return "LOSS"
+
 
 # ==============================
 # START
@@ -188,6 +194,7 @@ def start(m):
         "👋 Bem-vindo ao Quantix",
         reply_markup=kb
     )
+
 
 # ==============================
 # PARIDADES
@@ -217,6 +224,7 @@ def paridades(c):
         "📊 Escolha a paridade:",
         reply_markup=kb
     )
+
 
 # ==============================
 # EXECUÇÃO
@@ -294,7 +302,8 @@ def run(c):
 
     esperar_ate(fechamento)
 
-    time.sleep(10)
+    # ⚠️ espera candle fechar totalmente
+    time.sleep(20)
 
     resultado = resultado_real(
         par,
@@ -311,7 +320,8 @@ def run(c):
 
         esperar_ate(gale + timedelta(minutes=1))
 
-        time.sleep(10)
+        # ⚠️ espera candle fechar totalmente
+        time.sleep(20)
 
         resultado = resultado_real(
             par,
