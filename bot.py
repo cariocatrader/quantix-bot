@@ -1,231 +1,231 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import time
+import websocket
+import json
 import threading
+import time
 from datetime import datetime, timedelta
 import pytz
 import os
 
 TOKEN = os.getenv("TOKEN")
-bot = telebot.TeleBot(TOKEN, threaded=False)
+bot = telebot.TeleBot(TOKEN, threaded=True)
 
 tz = pytz.timezone("America/Sao_Paulo")
-
-GIF_ANALISE = "analise.gif"
-GIF_WIN = "win.gif"
-GIF_LOSS = "loss.gif"
 
 # =========================
 # PARIDADES
 # =========================
 
-PARIDADES = {
-    "btc": "BTC/USDT",
-    "eth": "ETH/USDT",
-    "bnb": "BNB/USDT",
-    "sol": "SOL/USDT",
-    "xrp": "XRP/USDT",
-    "ada": "ADA/USDT",
-    "doge": "DOGE/USDT",
-    "ltc": "LTC/USDT",
-    "dot": "DOT/USDT",
-    "avax": "AVAX/USDT"
+SYMBOLS = {
+    "BTCUSDT": "BTC/USDT",
+    "ETHUSDT": "ETH/USDT",
+    "BNBUSDT": "BNB/USDT",
+    "SOLUSDT": "SOL/USDT",
+    "XRPUSDT": "XRP/USDT",
+    "ADAUSDT": "ADA/USDT",
+    "DOGEUSDT": "DOGE/USDT",
+    "LTCUSDT": "LTC/USDT",
+    "DOTUSDT": "DOT/USDT",
+    "AVAXUSDT": "AVAX/USDT"
 }
 
 # =========================
-# UTILS
+# ESTADO GLOBAL
+# =========================
+
+active_signals = {}
+
+# =========================
+# UTIL
 # =========================
 
 def now():
     return datetime.now(tz)
 
-def delete(chat, msg):
-    try:
-        bot.delete_message(chat, msg)
-    except:
-        pass
-
 def btn_final():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🚀 Gerar novo sinal", callback_data="start"))
+    kb.add(InlineKeyboardButton("🚀 Novo Sinal", callback_data="start"))
     return kb
 
-def send_gif(chat, gif, text, kb=None):
-    with open(gif, "rb") as f:
-        return bot.send_animation(chat, f, caption=text, reply_markup=kb)
-
 # =========================
-# MENUS
+# WEBSOCKET BINANCE
 # =========================
 
-def menu_paridade():
-    kb = InlineKeyboardMarkup(row_width=2)
-    for k, v in PARIDADES.items():
-        kb.add(InlineKeyboardButton(v, callback_data=f"p_{k}"))
-    return kb
+STREAM = "wss://stream.binance.com:9443/ws/!kline_1m@arr"
 
-def menu_exp(coin):
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("⚡ 1 MIN", callback_data=f"e_{coin}_1"),
-        InlineKeyboardButton("🕐 5 MIN", callback_data=f"e_{coin}_5")
+def on_message(ws, message):
+    data = json.loads(message)
+
+    for asset in data:
+        symbol = asset["s"]
+
+        if symbol not in SYMBOLS:
+            continue
+
+        k = asset["k"]
+
+        # candle FECHADO
+        if k["x"]:
+
+            open_price = float(k["o"])
+            close_price = float(k["c"])
+
+            diff = close_price - open_price
+
+            if abs(diff) < 0.00001:
+                continue
+
+            direction = "COMPRA" if diff > 0 else "VENDA"
+
+            # evita spam
+            last = active_signals.get(symbol, {}).get("time")
+
+            if last and (now() - last).seconds < 60:
+                continue
+
+            chat_id = 123456789  # 👈 TROQUE PELO SEU ID OU SISTEMA MULTIUSUÁRIO
+
+            send_signal(chat_id, symbol, direction)
+
+def on_error(ws, error):
+    print("WS ERROR:", error)
+
+def on_close(ws, *args):
+    print("WS reconnect...")
+    time.sleep(3)
+    start_ws()
+
+def on_open(ws):
+    print("WEBSOCKET CONECTADO BINANCE")
+
+def start_ws():
+    ws = websocket.WebSocketApp(
+        STREAM,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close,
+        on_open=on_open
     )
-    return kb
+    ws.run_forever()
 
 # =========================
-# TEMPO
+# SINAL TELEGRAM
 # =========================
 
-def next_1m():
-    n = now()
-    return n.replace(second=0, microsecond=0) + timedelta(minutes=1)
+def send_signal(chat_id, symbol, direction):
 
-def next_5m():
-    n = now().replace(second=0, microsecond=0)
-    return n + timedelta(minutes=(5 - n.minute % 5) % 5)
+    entry = now() + timedelta(seconds=5)
+    gale = entry + timedelta(minutes=1)
+
+    active_signals[symbol] = {
+        "chat_id": chat_id,
+        "direction": direction,
+        "entry": entry,
+        "gale": gale,
+        "time": now()
+    }
+
+    bot.send_message(
+        chat_id,
+        f"""🚀 SINAL GERADO
+━━━━━━━━━━━━━━
+💱 Par: {symbol}
+⏱ Entrada: {entry.strftime('%H:%M:%S')}
+🎯 Direção: {direction}
+🔁 Gale 1: {gale.strftime('%H:%M:%S')}
+⏳ Expiração: 1m"""
+    )
+
+    threading.Thread(
+        target=run_result,
+        args=(chat_id, symbol),
+        daemon=True
+    ).start()
 
 # =========================
-# START
+# RESULTADO
+# =========================
+
+def run_result(chat_id, symbol):
+
+    sig = active_signals.get(symbol)
+    if not sig:
+        return
+
+    exp = 60  # 1 min fixo
+
+    time.sleep(exp)
+
+    # 🔥 aqui entra lógica real futura (Binance candle validation)
+    result = "LOSS"
+
+    if result == "WIN":
+
+        time.sleep(3)
+
+        bot.send_message(
+            chat_id,
+            f"""🏁 RESULTADO FINAL
+━━━━━━━━━━━━━━
+💱 Par: {symbol}
+📊 Resultado: WIN
+🎯 Direção: {sig['direction']}
+⏱ Entrada: {sig['entry'].strftime('%H:%M:%S')}""",
+            reply_markup=btn_final()
+        )
+        return
+
+    # =========================
+    # LOSS → GALE
+    # =========================
+
+    bot.send_message(chat_id, "⚠️ Entrando em Gale 1...")
+
+    time.sleep(exp)
+
+    gale_result = "WIN"
+
+    time.sleep(3)
+
+    bot.send_message(
+        chat_id,
+        f"""🏁 RESULTADO FINAL
+━━━━━━━━━━━━━━
+💱 Par: {symbol}
+📊 Resultado: {gale_result}
+🎯 Direção: {sig['direction']}
+⏱ Entrada: {sig['entry'].strftime('%H:%M:%S')}
+🔁 Gale: {sig['gale'].strftime('%H:%M:%S')}""",
+        reply_markup=btn_final()
+    )
+
+# =========================
+# TELEGRAM START
 # =========================
 
 @bot.message_handler(commands=["start"])
 def start(m):
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="start"))
-    bot.send_message(m.chat.id, "📊 Bot de Sinais Ativo", reply_markup=kb)
-
-# =========================
-# INÍCIO
-# =========================
+    kb.add(InlineKeyboardButton("🚀 Ativar Sinais", callback_data="start"))
+    bot.send_message(m.chat.id, "📊 Bot Binance WS ativo", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "start")
 def st(c):
     bot.answer_callback_query(c.id)
-    delete(c.message.chat.id, c.message.message_id)
-
-    bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=menu_paridade())
+    bot.send_message(c.message.chat.id, "🔥 Sistema ativo. Monitorando mercado...")
 
 # =========================
-# PARIDADE
+# START SYSTEM
 # =========================
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
-def par(c):
-    coin = c.data.split("_")[1]
-    bot.answer_callback_query(c.id)
-    delete(c.message.chat.id, c.message.message_id)
+threading.Thread(target=start_ws, daemon=True).start()
 
-    bot.send_message(
-        c.message.chat.id,
-        f"📈 Par: {PARIDADES[coin]}\nEscolha expiração:",
-        reply_markup=menu_exp(coin)
-    )
-
-# =========================
-# EXECUÇÃO
-# =========================
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("e_"))
-def exec(c):
-    _, coin, exp = c.data.split("_")
-    exp = int(exp)
-
-    bot.answer_callback_query(c.id)
-    delete(c.message.chat.id, c.message.message_id)
-
-    entrada = next_1m() if exp == 1 else next_5m()
-    gale = entrada + timedelta(minutes=exp)
-
-    direcao = "COMPRA"
-
-    send_gif(c.message.chat.id, GIF_ANALISE, "🔎 Analisando mercado...")
-
-    bot.send_message(
-        c.message.chat.id,
-        f"""🚀 SINAL ENVIADO
-━━━━━━━━━━━━━━
-💱 Par: {PARIDADES[coin]}
-📍 Entrada: {entrada.strftime('%H:%M')}
-🎯 Direção: {direcao}
-🔁 Gale: {gale.strftime('%H:%M')}
-⏳ Expiração: {exp} min"""
-    )
-
-    # =========================
-    # EXECUÇÃO REAL
-    # =========================
-
-    def run():
-        try:
-            time.sleep(exp * 60)
-
-            resultado = "LOSS"  # substitui pela sua lógica real depois
-
-            if resultado == "WIN":
-                time.sleep(3)
-                send_gif(
-                    c.message.chat.id,
-                    GIF_WIN,
-                    f"""🏁 RESULTADO FINAL
-━━━━━━━━━━━━━━
-💱 Par: {PARIDADES[coin]}
-📍 Entrada: {entrada.strftime('%H:%M')}
-🎯 Direção: {direcao}
-📊 Resultado: WIN""",
-                    btn_final()
-                )
-                return
-
-            # LOSS → GALE
-            bot.send_message(
-                c.message.chat.id,
-                f"""⚠️ LOSS DETECTADO
-━━━━━━━━━━━━━━
-🔁 Entrando em GALE 1
-📍 Entrada: {entrada.strftime('%H:%M')}
-🔁 Gale: {gale.strftime('%H:%M')}"""
-            )
-
-            time.sleep(exp * 60)
-
-            gale_result = "WIN"
-
-            time.sleep(3)
-
-            gif = GIF_WIN if gale_result == "WIN" else GIF_LOSS
-
-            send_gif(
-                c.message.chat.id,
-                gif,
-                f"""🏁 RESULTADO FINAL
-━━━━━━━━━━━━━━
-💱 Par: {PARIDADES[coin]}
-📍 Entrada: {entrada.strftime('%H:%M')}
-🔁 Gale: {gale.strftime('%H:%M')}
-🎯 Direção: {direcao}
-📊 Resultado: {gale_result}""",
-                btn_final()
-            )
-
-        except Exception:
-            send_gif(
-                c.message.chat.id,
-                GIF_LOSS,
-                "⚠️ ERRO NO MERCADO - SINAL CANCELADO",
-                btn_final()
-            )
-
-    threading.Thread(target=run).start()
-
-# =========================
-# LOOP
-# =========================
-
-print("BOT ONLINE - FLUXO FINAL LIMPO")
+print("BOT + BINANCE WS ONLINE")
 
 while True:
     try:
-        bot.infinity_polling(timeout=30, long_polling_timeout=15)
+        bot.infinity_polling()
     except Exception as e:
-        print("Erro:", e)
+        print("ERR:", e)
         time.sleep(5)
