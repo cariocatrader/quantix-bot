@@ -119,7 +119,12 @@ def start(m):
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def gerar(c):
     try:
-        bot.edit_message_text("Escolha a paridade:", c.message.chat.id, c.message.message_id, reply_markup=menu_paridades())
+        bot.edit_message_text(
+            "Escolha a paridade:",
+            c.message.chat.id,
+            c.message.message_id,
+            reply_markup=menu_paridades()
+        )
     except:
         bot.send_message(c.message.chat.id, "Escolha a paridade:", reply_markup=menu_paridades())
 
@@ -136,6 +141,7 @@ def run(c):
 
     sinal = None
     inicio = time.time()
+
     while time.time() - inicio < 35:
         candles = buscar_candles(par)
         if candles:
@@ -161,14 +167,10 @@ def run(c):
 
     bot.send_message(
         c.message.chat.id,
-        "SINAL GERADO
-"
-        f"Paridade: {BANDERAS[par]} {par}
-"
-        f"Timeframe: M1
-"
-        f"Entrada: {horario_entrada} ({sinal})
-"
+        "SINAL GERADO\n"
+        f"Paridade: {BANDERAS[par]} {par}\n"
+        f"Timeframe: M1\n"
+        f"Entrada: {horario_entrada} ({sinal})\n"
         f"Gale: {horario_gale}"
     )
 
@@ -196,7 +198,12 @@ def run(c):
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
 
-    bot.send_animation(c.message.chat.id, open(gif, "rb"), caption=f"Final: {resultado}", reply_markup=botao_novo_sinal())
+    bot.send_animation(
+        c.message.chat.id,
+        open(gif, "rb"),
+        caption=f"Final: {resultado}",
+        reply_markup=botao_novo_sinal()
+    )
 
 print("BOT ONLINE - QUANTIX")
 
