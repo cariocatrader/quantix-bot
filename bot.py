@@ -54,9 +54,11 @@ def buscar_candles(paridade):
 def analisar(candles):
     if len(candles) < 4:
         return None
+
     ultimos = candles[0:3]
     altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
     baixas = 3 - altas
+
     if altas >= 2:
         return "CALL"
     if baixas >= 2:
@@ -169,6 +171,7 @@ def run(c):
 
     sinal = None
     inicio = time.time()
+
     while time.time() - inicio < 35:
         candles = buscar_candles(par)
         if candles:
