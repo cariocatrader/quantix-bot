@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timedelta
 import pytz
 import os
-import json
 
 # ==============================
 # CONFIG
@@ -17,7 +16,6 @@ API_KEY = os.getenv("API_KEY")
 bot = telebot.TeleBot(TOKEN)
 
 timezone = pytz.timezone("America/Sao_Paulo")
-utc = pytz.utc
 
 GIF_ANALISE = "analise.gif"
 GIF_WIN = "win.gif"
@@ -31,11 +29,12 @@ PARIDADES = [
 BANDERAS = {
     "EUR/USD":"🇪🇺🇺🇸","GBP/USD":"🇬🇧🇺🇸","USD/JPY":"🇺🇸🇯🇵",
     "AUD/USD":"🇦🇺🇺🇸","USD/CAD":"🇺🇸🇨🇦","USD/CHF":"🇺🇸🇨🇭",
-    "NZD/USD":"🇳🇿🇺🇸","EUR/GBP":"🇪🇺🇬🇧","EUR/JPY":"🇪🇺🇯🇵","GBP/JPY":"🇬🇧🇯🇵"
+    "NZD/USD":"🇳🇿🇺🇸","EUR/GBP":"🇪🇺🇬🇧",
+    "EUR/JPY":"🇪🇺🇯🇵","GBP/JPY":"🇬🇧🇯🇵"
 }
 
 # ==============================
-# API CANDLES
+# API
 # ==============================
 
 def buscar_candles(paridade):
@@ -79,23 +78,19 @@ def analisar(candles):
     return None
 
 # ==============================
-# CONVERSÃO UTC → BRASIL (FIX)
+# PRÓXIMA ENTRADA (FIX DEFINITIVO)
 # ==============================
 
-def proxima_entrada_real(candle):
+def proxima_entrada_real():
 
-    t = datetime.strptime(
-        candle["datetime"],
-        "%Y-%m-%d %H:%M:%S"
-    )
+    agora = datetime.now(timezone)
 
-    t = utc.localize(t)
+    entrada = agora.replace(
+        second=0,
+        microsecond=0
+    ) + timedelta(minutes=1)
 
-    t_brasil = t.astimezone(timezone)
-
-    t_brasil = t_brasil.replace(second=0)
-
-    return t_brasil + timedelta(minutes=1)
+    return entrada
 
 # ==============================
 # ESPERA SINCRONIZADA
@@ -240,9 +235,11 @@ def run(c):
 
         return
 
-    candle_atual = candles[0]
+    # ==============================
+    # HORÁRIO CORRIGIDO
+    # ==============================
 
-    entrada = proxima_entrada_real(candle_atual)
+    entrada = proxima_entrada_real()
 
     gale = entrada + timedelta(minutes=1)
 
@@ -262,10 +259,6 @@ def run(c):
 """
     )
 
-    # ==============================
-    # ESPERA ENTRADA
-    # ==============================
-
     esperar_ate(entrada)
 
     resultado = resultado_real(par, sinal)
@@ -284,10 +277,6 @@ def run(c):
         esperar_ate(gale)
 
         resultado = resultado_real(par, sinal)
-
-    # ==============================
-    # RESULTADO FINAL
-    # ==============================
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
 
