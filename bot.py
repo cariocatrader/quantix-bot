@@ -47,11 +47,13 @@ def buscar_candles(paridade):
         data = r.json()
 
         if "values" not in data:
+            print("Erro API:", data)
             return None
 
         return data["values"]
 
-    except:
+    except Exception as e:
+        print("Erro buscar candles:", e)
         return None
 
 # ==============================
@@ -63,6 +65,7 @@ def analisar(candles):
     if len(candles) < 4:
         return None
 
+    # usa candles fechados
     ultimos = candles[1:4]
 
     altas = sum(
@@ -81,7 +84,7 @@ def analisar(candles):
     return None
 
 # ==============================
-# HORÁRIO ENTRADA
+# PRÓXIMA ENTRADA
 # ==============================
 
 def proxima_entrada_real():
@@ -111,58 +114,21 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO REAL (SEM FALLBACK)
+# RESULTADO
 # ==============================
 
-def resultado_real(paridade, direcao, horario_entrada):
+def resultado_real(paridade, direcao):
 
-    # aguardar API atualizar
-    time.sleep(5)
+    candles = buscar_candles(paridade)
 
-    # converter para UTC
-    horario_utc = horario_entrada.astimezone(pytz.utc)
+    if not candles or len(candles) < 2:
+        return None
 
-    horario_str = horario_utc.strftime("%Y-%m-%d %H:%M:%S")
+    # ⚠️ usa candle fechado
+    candle = candles[1]
 
-    print("PROCURANDO CANDLE:", horario_str)
-
-    candle_encontrado = None
-
-    tempo_inicio = time.time()
-
-    while True:
-
-        candles = buscar_candles(paridade)
-
-        if candles:
-
-            for c in candles:
-
-                if c["datetime"] == horario_str:
-
-                    candle_encontrado = c
-                    break
-
-        if candle_encontrado:
-            break
-
-        # espera até encontrar candle real
-        if time.time() - tempo_inicio > 60:
-
-            print("CANDLE NÃO ENCONTRADO:", horario_str)
-            return "LOSS"
-
-        time.sleep(2)
-
-    open_price = float(candle_encontrado["open"])
-    close_price = float(candle_encontrado["close"])
-
-    print(
-        "CANDLE REAL:",
-        candle_encontrado["datetime"],
-        open_price,
-        close_price
-    )
+    open_price = float(candle["open"])
+    close_price = float(candle["close"])
 
     if close_price > open_price:
 
@@ -174,7 +140,7 @@ def resultado_real(paridade, direcao, horario_entrada):
 
     else:
 
-        return "LOSS"
+        return "DOJI"
 
 # ==============================
 # START
@@ -283,8 +249,11 @@ def run(c):
         return
 
     entrada = proxima_entrada_real()
-
     gale = entrada + timedelta(minutes=1)
+
+    # ==============================
+    # SINAL
+    # ==============================
 
     bot.send_message(
         c.message.chat.id,
@@ -298,17 +267,21 @@ def run(c):
 """
     )
 
+    # ==============================
+    # ESPERA ENTRADA
+    # ==============================
+
     esperar_ate(entrada)
 
     fechamento = entrada + timedelta(minutes=1)
 
     esperar_ate(fechamento)
 
-    resultado = resultado_real(
-        par,
-        sinal,
-        entrada
-    )
+    resultado = resultado_real(par, sinal)
+
+    # ==============================
+    # GALE
+    # ==============================
 
     if resultado == "LOSS":
 
@@ -317,15 +290,9 @@ def run(c):
             "⚠️ Entrando em GALE 1..."
         )
 
-        fechamento_gale = gale + timedelta(minutes=1)
+        esperar_ate(gale + timedelta(minutes=1))
 
-        esperar_ate(fechamento_gale)
-
-        resultado = resultado_real(
-            par,
-            sinal,
-            gale
-        )
+        resultado = resultado_real(par, sinal)
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
 
