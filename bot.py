@@ -6,10 +6,6 @@ from datetime import datetime, timedelta
 import pytz
 import os
 
-# ==============================
-# CONFIG
-# ==============================
-
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
 
@@ -38,10 +34,6 @@ BANDERAS = {
     "GBP/JPY": "🇬🇧🇯🇵"
 }
 
-# ==============================
-# API
-# ==============================
-
 def buscar_candles(paridade):
     url = (
         f"https://api.twelvedata.com/time_series?"
@@ -59,27 +51,17 @@ def buscar_candles(paridade):
         print("Erro buscar candles:", e)
         return None
 
-# ==============================
-# ANALISE
-# ==============================
-
 def analisar(candles):
     if len(candles) < 4:
         return None
-
     ultimos = candles[0:3]
     altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
     baixas = 3 - altas
-
     if altas >= 2:
         return "CALL"
     if baixas >= 2:
         return "PUT"
     return None
-
-# ==============================
-# TEMPO
-# ==============================
 
 def proxima_entrada_real():
     agora = datetime.now(timezone)
@@ -92,10 +74,6 @@ def esperar_ate(timestamp):
 def parse_candle_time(dt_str):
     dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
     return timezone.localize(dt)
-
-# ==============================
-# DEBUG DO CANDLE
-# ==============================
 
 def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
     fim = time.time() + timeout_seg
@@ -121,10 +99,8 @@ def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
 def calcular_resultado(candle, direcao):
     open_price = candle["open"]
     close_price = candle["close"]
-
     if abs(close_price - open_price) < 0.00001:
         return "DOJI", "DOJI"
-
     candle_dir = "CALL" if close_price > open_price else "PUT"
     resultado = "WIN" if candle_dir == direcao else "LOSS"
     return resultado, candle_dir
@@ -147,10 +123,6 @@ def montar_debug(candle, direcao, resultado, candle_dir):
         f"📊 Resultado: {resultado}"
     )
 
-# ==============================
-# MENUS
-# ==============================
-
 def menu_paridades():
     kb = InlineKeyboardMarkup(row_width=2)
     for par in PARIDADES:
@@ -162,19 +134,11 @@ def botao_novo_sinal():
     kb.add(InlineKeyboardButton("🚀 Novo Sinal", callback_data="gerar"))
     return kb
 
-# ==============================
-# START
-# ==============================
-
 @bot.message_handler(commands=["start"])
 def start(m):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
     bot.send_message(m.chat.id, "👋 Quantix Signals", reply_markup=kb)
-
-# ==============================
-# GERAR
-# ==============================
 
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def gerar(c):
@@ -187,10 +151,6 @@ def gerar(c):
         )
     except:
         bot.send_message(c.message.chat.id, "Escolha a paridade:", reply_markup=menu_paridades())
-
-# ==============================
-# EXECUÇÃO
-# ==============================
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
 def run(c):
@@ -247,7 +207,6 @@ def run(c):
 """
     )
 
-    # ENTRADA 1
     esperar_ate(entrada + timedelta(minutes=1))
     time.sleep(1.0)
 
@@ -264,7 +223,6 @@ def run(c):
 
     bot.send_message(c.message.chat.id, montar_debug(candle_entrada, sinal, resultado, candle_dir))
 
-    # GALE
     if resultado != "WIN":
         bot.send_message(
             c.message.chat.id,
