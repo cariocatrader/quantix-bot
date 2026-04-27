@@ -36,15 +36,9 @@ BANDERAS = {
 
 def send_gif(chat_id, path, caption, reply_markup=None):
     with open(path, "rb") as f:
-        return bot.send_animation(
-            chat_id,
-            f,
-            caption=caption,
-            reply_markup=reply_markup,
-            disable_notification=True
-        )
+        return bot.send_animation(chat_id, f, caption=caption, reply_markup=reply_markup)
 
-def buscar_candles(paridade, outputsize=100):
+def buscar_candles(paridade, outputsize=50):
     url = (
         f"https://api.twelvedata.com/time_series?"
         f"symbol={paridade}&interval=1min&outputsize={outputsize}"
@@ -64,16 +58,14 @@ def buscar_candles(paridade, outputsize=100):
         return None
 
 def analisar(candles):
-    if len(candles) < 6:
+    if len(candles) < 4:
         return None
-
-    ultimos = candles[-5:]
-    wins_call = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
-    wins_put = sum(float(c["close"]) < float(c["open"]) for c in ultimos)
-
-    if wins_call >= 4:
+    ultimos = candles[-3:]
+    altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
+    baixas = 3 - altas
+    if altas >= 2:
         return "CALL"
-    if wins_put >= 4:
+    if baixas >= 2:
         return "PUT"
     return None
 
@@ -167,7 +159,7 @@ def run(c):
     inicio = time.time()
 
     while time.time() - inicio < 45:
-        candles = buscar_candles(par, outputsize=120)
+        candles = buscar_candles(par, outputsize=50)
         if candles:
             sinal = analisar(candles)
             if sinal:
