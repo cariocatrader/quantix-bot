@@ -65,7 +65,7 @@ def analisar(candles):
     if len(candles) < 4:
         return None
 
-    # usa candles fechados
+    # candles fechados
     ultimos = candles[1:4]
 
     altas = sum(
@@ -114,7 +114,7 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO
+# RESULTADO REAL (CORRIGIDO)
 # ==============================
 
 def resultado_real(paridade, direcao):
@@ -124,7 +124,7 @@ def resultado_real(paridade, direcao):
     if not candles or len(candles) < 2:
         return None
 
-    # ⚠️ usa candle fechado
+    # candle fechado
     candle = candles[1]
 
     open_price = float(candle["open"])
@@ -132,15 +132,23 @@ def resultado_real(paridade, direcao):
 
     if close_price > open_price:
 
-        return "WIN" if direcao == "CALL" else "LOSS"
+        candle_result = "CALL"
 
     elif close_price < open_price:
 
-        return "WIN" if direcao == "PUT" else "LOSS"
+        candle_result = "PUT"
 
     else:
 
+        candle_result = "DOJI"
+
+    if candle_result == "DOJI":
         return "DOJI"
+
+    if candle_result == direcao:
+        return "WIN"
+
+    return "LOSS"
 
 # ==============================
 # START
@@ -268,7 +276,7 @@ def run(c):
     )
 
     # ==============================
-    # ESPERA ENTRADA
+    # PRIMEIRA ENTRADA
     # ==============================
 
     esperar_ate(entrada)
@@ -277,7 +285,20 @@ def run(c):
 
     esperar_ate(fechamento)
 
+    # ⚠️ espera atualização da API
+    time.sleep(5)
+
     resultado = resultado_real(par, sinal)
+
+    # DOJI cancela operação
+    if resultado == "DOJI":
+
+        bot.send_message(
+            c.message.chat.id,
+            "⚠️ Candle DOJI — operação anulada."
+        )
+
+        return
 
     # ==============================
     # GALE
@@ -291,6 +312,8 @@ def run(c):
         )
 
         esperar_ate(gale + timedelta(minutes=1))
+
+        time.sleep(5)
 
         resultado = resultado_real(par, sinal)
 
