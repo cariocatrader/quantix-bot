@@ -91,7 +91,7 @@ def analisar(candles):
 
 
 # ==============================
-# ENTRADA
+# TEMPO
 # ==============================
 
 def proxima_entrada_real():
@@ -119,19 +119,16 @@ def esperar_ate(timestamp):
 
 
 # ==============================
-# RESULTADO REAL (CORRIGIDO)
+# RESULTADO REAL FINAL
 # ==============================
 
 def resultado_real(paridade, direcao, horario):
 
-    tentativas = 0
-
-    while tentativas < 5:
+    for tentativa in range(6):
 
         candles = buscar_candles(paridade)
 
         if not candles:
-            tentativas += 1
             time.sleep(2)
             continue
 
@@ -164,11 +161,7 @@ def resultado_real(paridade, direcao, horario):
 
                 return "LOSS"
 
-        tentativas += 1
-
         time.sleep(3)
-
-    print("Candle não encontrado")
 
     return "LOSS"
 
@@ -246,7 +239,6 @@ def run(c):
         caption="🔎 Quantix está analisando o mercado..."
     )
 
-    candles = None
     sinal = None
 
     start_time = time.time()
@@ -302,8 +294,8 @@ def run(c):
 
     esperar_ate(fechamento)
 
-    # ⚠️ espera candle fechar totalmente
-    time.sleep(20)
+    # espera candle fechar completamente
+    time.sleep(25)
 
     resultado = resultado_real(
         par,
@@ -320,8 +312,7 @@ def run(c):
 
         esperar_ate(gale + timedelta(minutes=1))
 
-        # ⚠️ espera candle fechar totalmente
-        time.sleep(20)
+        time.sleep(25)
 
         resultado = resultado_real(
             par,
