@@ -98,28 +98,11 @@ def calcular_resultado(candle, direcao):
     open_price = candle["open"]
     close_price = candle["close"]
     if abs(close_price - open_price) < 0.00001:
-        return "DOJI", "DOJI"
+        return "DOJI"
     candle_dir = "CALL" if close_price > open_price else "PUT"
-    resultado = "WIN" if candle_dir == direcao else "LOSS"
-    return resultado, candle_dir
-
-def montar_debug(candle, direcao, resultado, candle_dir):
-    dt = candle["datetime"].strftime("%H:%M")
-    return (
-        "🔎 DEBUG DO CANDLE
-"
-        f"⏱ Horário: {dt}
-"
-        f"📈 Open: {candle['open']}
-"
-        f"📉 Close: {candle['close']}
-"
-        f"➡️ Direção do candle: {candle_dir}
-"
-        f"🎯 Sinal: {direcao}
-"
-        f"📊 Resultado: {resultado}"
-    )
+    if candle_dir == direcao:
+        return "WIN"
+    return "LOSS"
 
 def menu_paridades():
     kb = InlineKeyboardMarkup(row_width=2)
@@ -196,11 +179,11 @@ def run(c):
 
     bot.send_message(
         c.message.chat.id,
-        "📊 SINAL:
+        f"📊 SINAL:
 "
         f"📊 {BANDERAS[par]} {par}
 "
-        "⏱ M1
+        f"⏱ M1
 "
         f"🎯 {horario_entrada} ({sinal})
 "
@@ -219,8 +202,7 @@ def run(c):
         )
         return
 
-    resultado, candle_dir = calcular_resultado(candle_entrada, sinal)
-    bot.send_message(c.message.chat.id, montar_debug(candle_entrada, sinal, resultado, candle_dir))
+    resultado = calcular_resultado(candle_entrada, sinal)
 
     if resultado != "WIN":
         bot.send_message(
@@ -240,10 +222,10 @@ def run(c):
             )
             return
 
-        resultado, candle_dir = calcular_resultado(candle_gale, sinal)
-        bot.send_message(c.message.chat.id, montar_debug(candle_gale, sinal, resultado, candle_dir))
+        resultado = calcular_resultado(candle_gale, sinal)
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
+
     bot.send_animation(
         c.message.chat.id,
         open(gif, "rb"),
@@ -251,6 +233,6 @@ def run(c):
         reply_markup=botao_novo_sinal()
     )
 
-print("BOT ONLINE - QUANTIX COMPLETO")
+print("BOT ONLINE - QUANTIX")
 
 bot.infinity_polling(timeout=15, long_polling_timeout=15, skip_pending=True)
