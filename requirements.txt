@@ -1,5 +1,2 @@
-telebot
+pyTelegramBotAPI
 requests
-python-binance
-websocket-client
-pytz
