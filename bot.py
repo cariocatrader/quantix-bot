@@ -53,11 +53,31 @@ COINCAP_ID = {
     "avalanche-2": "avalanche",
 }
 
-HEADERS = {"Accept-Encoding": "gzip, deflate", "User-Agent": "QuantixBot/1.0"}
+HEADERS = {"User-Agent": "QuantixBot/1.0"}
 
-# =============================
-# UTILITÁRIOS
-# =============================
+# =========================
+# TEMPO AJUSTADO
+# =========================
+
+def proxima_entrada_1min():
+    agora = datetime.now(timezone)
+    return agora.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+def proxima_entrada_5min():
+    agora = datetime.now(timezone)
+    base = agora.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+    resto = base.minute % 5
+    ajuste = (5 - resto) % 5
+    return base + timedelta(minutes=ajuste)
+
+def esperar_ate(ts):
+    while datetime.now(timezone) < ts:
+        time.sleep(0.2)
+
+# =========================
+# UTIL
+# =========================
 
 def send_gif(chat_id, path, caption, reply_markup=None):
     with open(path, "rb") as f:
@@ -66,12 +86,12 @@ def send_gif(chat_id, path, caption, reply_markup=None):
 def delete_msg(chat_id, msg_id):
     try:
         bot.delete_message(chat_id, msg_id)
-    except Exception:
+    except:
         pass
 
-# =============================
+# =========================
 # MENUS
-# =============================
+# =========================
 
 def menu_paridades():
     kb = InlineKeyboardMarkup(row_width=2)
@@ -89,105 +109,125 @@ def menu_expiracao(coin_id):
     )
     return kb, nome, emoji
 
-def botao_novo_sinal():
+def botao_novo():
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Novo Sinal", callback_data="gerar"))
     return kb
 
-# =============================
-# START
-# =============================
+# =========================
+# ANALISE SIMPLIFICADA (mantida)
+# =========================
+
+def calcular_resultado(candle, direcao):
+    diff = candle["close"] - candle["open"]
+    if abs(diff) < 1e-8:
+        return "DOJI"
+    return "WIN" if (diff > 0 and direcao == "CALL") or (diff < 0 and direcao == "PUT") else "LOSS"
+
+# =========================
+# FLUXO 1 MIN
+# =========================
+
+def fluxo_1min(chat_id, coin_id, msg_id):
+    nome, emoji = DISPLAY[coin_id]
+
+    delete_msg(chat_id, msg_id)
+
+    entrada = proxima_entrada_1min()
+    gale1 = entrada + timedelta(minutes=1)
+
+    direcao = "COMPRA"  # placeholder visual (CALL/PUT interno mantido se quiser expandir)
+
+    bot.send_message(
+        chat_id,
+        f"""🚀 SINAL 1M
+━━━━━━━━━━━━━━
+💱 Par: {emoji} {nome}
+📍 Entrada: {entrada.strftime('%H:%M')}
+🎯 Direção: {direcao}
+⏳ Expiração: 1 minuto
+🔁 Gale: {gale1.strftime('%H:%M')}"""
+    )
+
+# =========================
+# FLUXO 5 MIN (AJUSTADO MÚLTIPLOS DE 5)
+# =========================
+
+def fluxo_5min(chat_id, coin_id, msg_id):
+    nome, emoji = DISPLAY[coin_id]
+
+    delete_msg(chat_id, msg_id)
+
+    entrada = proxima_entrada_5min()
+    fechamento = entrada + timedelta(minutes=5)
+    gale1 = fechamento
+    gale2 = gale1 + timedelta(minutes=5)
+
+    bot.send_message(
+        chat_id,
+        f"""🚀 SINAL 5M
+━━━━━━━━━━━━━━
+💱 Par: {emoji} {nome}
+📍 Entrada: {entrada.strftime('%H:%M')}
+🎯 Direção: COMPRA/VENDA
+⏳ Expiração: 5 minutos
+🏁 Fechamento: {fechamento.strftime('%H:%M')}
+🔁 Gale 1: {gale1.strftime('%H:%M')}
+🔁 Gale 2: {gale2.strftime('%H:%M')}"""
+    )
+
+# =========================
+# HANDLERS
+# =========================
 
 @bot.message_handler(commands=["start"])
 def start(m):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
-    bot.send_message(m.chat.id, "👋 Quantix Signals", reply_markup=kb)
-
-# =============================
-# CALLBACKS
-# =============================
+    bot.send_message(m.chat.id, "👋 Bot de Sinais Online", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def gerar(c):
     bot.answer_callback_query(c.id)
-    try:
-        bot.edit_message_text(
-            "Escolha o par:",
-            c.message.chat.id,
-            c.message.message_id,
-            reply_markup=menu_paridades()
-        )
-    except:
-        bot.send_message(c.message.chat.id, "Escolha o par:", reply_markup=menu_paridades())
+    bot.send_message(c.message.chat.id, "Escolha o par:", reply_markup=menu_paridades())
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
-def escolher_expiracao(c):
-    coin_id = c.data.split("_", 1)[1]
+def par(c):
+    coin = c.data.split("_")[1]
     bot.answer_callback_query(c.id)
 
-    kb, nome, emoji = menu_expiracao(coin_id)
-
-    try:
-        bot.edit_message_text(
-            f"Par: {emoji} {nome}\nEscolha a expiração:",
-            c.message.chat.id,
-            c.message.message_id,
-            reply_markup=kb
-        )
-    except:
-        bot.send_message(
-            c.message.chat.id,
-            f"Par: {emoji} {nome}\nEscolha a expiração:",
-            reply_markup=kb
-        )
-
-# =============================
-# FLUXO 1 MINUTO
-# =============================
-
-def fluxo_1min(chat_id, coin_id, msg_analise_id):
-    nome, emoji = DISPLAY[coin_id]
-
-    delete_msg(chat_id, msg_analise_id)
+    kb, nome, emoji = menu_expiracao(coin)
 
     bot.send_message(
-        chat_id,
-        f"""🚀 SINAL ENVIADO
-━━━━━━━━━━━━━━
-💱 Paridade: {emoji} {nome}
-⏱ Expiração: 1 minuto"""
+        c.message.chat.id,
+        f"Par: {emoji} {nome}\nEscolha expiração:",
+        reply_markup=kb
     )
 
-# =============================
-# CALLBACK EXECUÇÃO
-# =============================
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("e_"))
-def run(c):
-    _, coin_id, exp = c.data.split("_")
+def exec(c):
+    _, coin, exp = c.data.split("_")
     exp = int(exp)
 
     bot.answer_callback_query(c.id)
     delete_msg(c.message.chat.id, c.message.message_id)
 
-    msg = send_gif(c.message.chat.id, GIF_ANALISE, "🔎 Analisando mercado...")
+    msg = send_gif(c.message.chat.id, GIF_ANALISE, "🔎 Analisando...")
 
-    threading.Thread(
-        target=fluxo_1min,
-        args=(c.message.chat.id, coin_id, msg.message_id),
-        daemon=True
-    ).start()
+    if exp == 1:
+        threading.Thread(target=fluxo_1min, args=(c.message.chat.id, coin, msg.message_id)).start()
+    else:
+        threading.Thread(target=fluxo_5min, args=(c.message.chat.id, coin, msg.message_id)).start()
 
-# =============================
+# =========================
 # LOOP
-# =============================
+# =========================
 
-print("BOT ONLINE - QUANTIX CRIPTO")
+print("BOT ONLINE")
 
 while True:
     try:
         bot.infinity_polling(timeout=30, long_polling_timeout=15)
     except Exception as e:
-        print("Polling caiu:", e)
+        print("Erro polling:", e)
         time.sleep(5)
