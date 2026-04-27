@@ -41,13 +41,13 @@ def buscar_candles(paridade):
     try:
         r = requests.get(url, timeout=5)
         data = r.json()
-        print(f"API response for {paridade}: {data.get('status')}")
+        print(f"API {paridade}: {data.get('status')}")
         if "values" not in data:
             print("Erro API:", data)
             return None
         return data["values"]
     except Exception as e:
-        print("Erro buscar candles:", e)
+        print("Erro candles:", e)
         return None
 
 # ==============================
@@ -57,7 +57,7 @@ def buscar_candles(paridade):
 def analisar(candles):
     if len(candles) < 4:
         return None
-    ultimos = candles[0:3]  # Recentes primeiro
+    ultimos = candles[0:3]
     altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
     if altas >= 2:
         return "CALL"
@@ -79,13 +79,13 @@ def esperar_ate(timestamp):
         time.sleep(0.1)
 
 # ==============================
-# RESULTADO REAL (CORRIGIDO: VERIFICA CANDLE DA ENTRADA)
+# RESULTADO REAL
 # ==============================
 
-def resultado_real(paridade, direcao, horario_entrada):  # horario_entrada ex: "13:16"
-    print(f"🔍 Verificando resultado {paridade} {direcao} em {horario_entrada}")
+def resultado_real(paridade, direcao, horario_entrada):
+    print(f"🔍 {paridade} {direcao} {horario_entrada}")
     
-    for tentativa in range(30):  # ~9s total
+    for tentativa in range(30):
         candles = buscar_candles(paridade)
         if not candles:
             time.sleep(0.3)
@@ -93,29 +93,24 @@ def resultado_real(paridade, direcao, horario_entrada):  # horario_entrada ex: "
 
         for c in candles:
             try:
-                # datetime agora em SP timezone da API
                 candle_time = datetime.strptime(c["datetime"], "%Y-%m-%d %H:%M:%S")
-                candle_time = timezone.localize(candle_time)  # Já em SP
-                
+                candle_time = timezone.localize(candle_time)
                 if candle_time.strftime("%H:%M") == horario_entrada:
                     open_price = float(c["open"])
                     close_price = float(c["close"])
-                    print(f"✅ Candle {horario_entrada} encontrado: O={open_price:.5f} C={close_price:.5f}")
+                    print(f"✅ {horario_entrada}: O={open_price:.5f} C={close_price:.5f}")
 
                     if abs(close_price - open_price) < 0.00001:
-                        print("DOJI")
                         return "DOJI"
 
                     candle_dir = "CALL" if close_price > open_price else "PUT"
                     resultado = "WIN" if candle_dir == direcao else "LOSS"
-                    print(f"🎯 RESULTADO: {resultado} (candle {candle_dir})")
+                    print(f"🎯 {resultado}")
                     return resultado
-            except (ValueError, KeyError) as e:
+            except:
                 continue
-
         time.sleep(0.3)
 
-    print("❌ TIMEOUT")
     return "TIMEOUT"
 
 # ==============================
@@ -126,7 +121,7 @@ def resultado_real(paridade, direcao, horario_entrada):  # horario_entrada ex: "
 def start(m):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
-    bot.send_message(m.chat.id, "👋 Bem-vindo ao Quantix", reply_markup=kb)
+    bot.send_message(m.chat.id, "👋 Quantix Signals", reply_markup=kb)
 
 # ==============================
 # EXECUÇÃO
@@ -153,7 +148,9 @@ def run(c):
         pass
 
     if not sinal:
-        bot.send_message(c.message.chat.id, "❌ Sem sinal válido.")
+        novo_kb = InlineKeyboardMarkup()
+        novo_kb.add(InlineKeyboardButton("🔄 Novo Sinal", callback_data="gerar"))
+        bot.send_message(c.message.chat.id, "❌ Sem sinal.", reply_markup=novo_kb)
         return
 
     entrada = proxima_entrada_real()
@@ -169,28 +166,39 @@ def run(c):
 ⏳ Gale: {horario_gale}
 """)
 
-    # ENTRADA 1
     esperar_ate(entrada + timedelta(minutes=1))
-    time.sleep(2)  # Candle fecha
+    time.sleep(2)
     resultado = resultado_real(par, sinal, horario_entrada)
 
-    # GALE se necessário
     if resultado != "WIN":
         bot.send_message(c.message.chat.id, f"⚠️ {horario_entrada} LOSS → GALE {horario_gale}...")
         esperar_ate(gale + timedelta(minutes=1))
         time.sleep(2)
         resultado = resultado_real(par, sinal, horario_gale)
 
+    # RESULTADO FINAL COM BOTÃO NOVO SINAL
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
-    bot.send_animation(c.message.chat.id, open(gif, "rb"), caption=f"📊 Final: {resultado}")
+    kb_final = InlineKeyboardMarkup()
+    kb_final.add(InlineKeyboardButton("🚀 Novo Sinal", callback_data="gerar"))
+    
+    bot.send_animation(
+        c.message.chat.id, 
+        open(gif, "rb"), 
+        caption=f"📊 Final: **{resultado}**", 
+        reply_markup=kb_final,
+        parse_mode='Markdown'
+    )
 
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def gerar(c):
     kb = InlineKeyboardMarkup(row_width=2)
     for par in PARIDADES:
         kb.add(InlineKeyboardButton(f"{BANDERAS[par]} {par}", callback_data=f"p_{par}"))
-    bot.edit_message_text("Paridade:", c.message.chat.id, c.message.message_id, reply_markup=kb)
+    try:
+        bot.edit_message_text("Escolha paridade:", c.message.chat.id, c.message.message_id, reply_markup=kb)
+    except:
+        bot.send_message(c.message.chat.id, "Escolha paridade:", reply_markup=kb)
 
-print("BOT ONLINE - WIN FIX (Timezone + Candle Entrada)")
+print("BOT ONLINE - COM BOTÃO NOVO SINAL")
 
 bot.infinity_polling(timeout=15, long_polling_timeout=15, skip_pending=True)
