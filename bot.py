@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 # =========================
-# TOKEN VIA VARIÁVEL ENV
+# TOKEN (RAILWAY ENV)
 # =========================
 
 TOKEN = os.getenv("TOKEN")
@@ -26,7 +26,35 @@ SYMBOLS = [
 ]
 
 # =========================
-# CANDLE BINANCE
+# MENU PARIDADES
+# =========================
+
+def menu_paridades():
+    kb = telebot.types.InlineKeyboardMarkup(row_width=2)
+
+    for s in SYMBOLS:
+        kb.add(
+            telebot.types.InlineKeyboardButton(
+                s.replace("USDT", "/USDT"),
+                callback_data=f"par_{s}"
+            )
+        )
+
+    return kb
+
+# =========================
+# BOTÃO NOVO SINAL
+# =========================
+
+def btn():
+    kb = telebot.types.InlineKeyboardMarkup()
+    kb.add(
+        telebot.types.InlineKeyboardButton("🚀 Gerar novo sinal", callback_data="novo")
+    )
+    return kb
+
+# =========================
+# BINANCE CANDLE
 # =========================
 
 def get_candle(symbol):
@@ -41,7 +69,7 @@ def get_candle(symbol):
     return open_price, close_price
 
 # =========================
-# SINAL
+# ANALISE
 # =========================
 
 def analyze(symbol):
@@ -51,10 +79,11 @@ def analyze(symbol):
         return "COMPRA"
     elif c < o:
         return "VENDA"
+
     return None
 
 # =========================
-# RESULTADO
+# RESULTADO REAL
 # =========================
 
 def result(symbol, direction):
@@ -69,21 +98,10 @@ def result(symbol, direction):
     return "LOSS"
 
 # =========================
-# BOTÃO
-# =========================
-
-def btn():
-    kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar novo sinal", callback_data="novo"))
-    return kb
-
-# =========================
 # FLUXO PRINCIPAL
 # =========================
 
-def run_signal(chat_id):
-
-    symbol = SYMBOLS[0]
+def run_signal(chat_id, symbol):
 
     direction = analyze(symbol)
 
@@ -156,43 +174,46 @@ def run_signal(chat_id):
     )
 
 # =========================
-# START BOT
+# START
 # =========================
 
 @bot.message_handler(commands=["start"])
 def start(m):
-    kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="gerar"))
-
-    bot.send_message(m.chat.id, "📊 Bot de sinais ativo", reply_markup=kb)
+    bot.send_message(
+        m.chat.id,
+        "📊 Escolha a paridade:",
+        reply_markup=menu_paridades()
+    )
 
 # =========================
-# CALLBACK GERAR
+# ESCOLHER PARIDADE
 # =========================
 
-@bot.callback_query_handler(func=lambda c: c.data == "gerar")
-def gerar(c):
+@bot.callback_query_handler(func=lambda c: c.data.startswith("par_"))
+def escolher_paridade(c):
     bot.answer_callback_query(c.id)
+
+    symbol = c.data.split("_")[1]
 
     threading.Thread(
         target=run_signal,
-        args=(c.message.chat.id,),
+        args=(c.message.chat.id, symbol),
         daemon=True
     ).start()
 
 # =========================
-# CALLBACK NOVO
+# NOVO SINAL
 # =========================
 
 @bot.callback_query_handler(func=lambda c: c.data == "novo")
 def novo(c):
     bot.answer_callback_query(c.id)
 
-    threading.Thread(
-        target=run_signal,
-        args=(c.message.chat.id,),
-        daemon=True
-    ).start()
+    bot.send_message(
+        c.message.chat.id,
+        "📊 Escolha a paridade:",
+        reply_markup=menu_paridades()
+    )
 
 # =========================
 # LOOP
