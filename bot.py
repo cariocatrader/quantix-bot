@@ -113,7 +113,7 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO REAL (CORRIGIDO FINAL)
+# RESULTADO REAL FINAL
 # ==============================
 
 def resultado_real(paridade, direcao, horario):
@@ -132,7 +132,11 @@ def resultado_real(paridade, direcao, horario):
             "%Y-%m-%d %H:%M:%S"
         )
 
-        candle_time = timezone.localize(candle_time)
+        # API é UTC
+        candle_time = pytz.utc.localize(candle_time)
+
+        # converter para Brasil
+        candle_time = candle_time.astimezone(timezone)
 
         if candle_time.strftime("%H:%M") == horario:
 
@@ -147,15 +151,12 @@ def resultado_real(paridade, direcao, horario):
     close_price = float(candle_correto["close"])
 
     if close_price > open_price:
-
         candle_result = "CALL"
 
     elif close_price < open_price:
-
         candle_result = "PUT"
 
     else:
-
         return "DOJI"
 
     if candle_result == direcao:
@@ -329,9 +330,7 @@ def run(c):
     bot.send_animation(
         c.message.chat.id,
         open(gif, "rb"),
-        caption=f"""
-📊 Resultado: {resultado}
-"""
+        caption=f"📊 Resultado: {resultado}"
     )
 
     kb = InlineKeyboardMarkup()
