@@ -45,7 +45,7 @@ BANDERAS = {
 def buscar_candles(paridade):
     url = (
         f"https://api.twelvedata.com/time_series?"
-        f"symbol={paridade}&interval=1min&outputsize=30"
+        f"symbol={paridade}&interval=1min&outputsize=50"
         f"&timezone=America/Sao_Paulo&apikey={API_KEY}"
     )
     try:
@@ -60,7 +60,7 @@ def buscar_candles(paridade):
         return None
 
 # ==============================
-# ANÁLISE
+# ANALISE
 # ==============================
 
 def analisar(candles):
@@ -94,43 +94,61 @@ def parse_candle_time(dt_str):
     return timezone.localize(dt)
 
 # ==============================
-# RESULTADO
+# DEBUG DO CANDLE
 # ==============================
 
-def resultado_real(paridade, direcao, horario_alvo):
-    alvo_hhmm = horario_alvo.strftime("%H:%M") if isinstance(horario_alvo, datetime) else horario_alvo
-
-    for tentativa in range(40):
+def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
+    fim = time.time() + timeout_seg
+    while time.time() < fim:
         candles = buscar_candles(paridade)
-        if not candles:
-            time.sleep(0.25)
-            continue
-
-        for c in candles:
-            try:
-                candle_time = parse_candle_time(c["datetime"])
-                if candle_time.strftime("%H:%M") != alvo_hhmm:
+        if candles:
+            for c in candles:
+                try:
+                    ct = parse_candle_time(c["datetime"])
+                    if ct.strftime("%H:%M") == horario_alvo:
+                        return {
+                            "datetime": ct,
+                            "open": float(c["open"]),
+                            "close": float(c["close"]),
+                            "high": float(c["high"]) if "high" in c else None,
+                            "low": float(c["low"]) if "low" in c else None
+                        }
+                except:
                     continue
+        time.sleep(0.5)
+    return None
 
-                open_price = float(c["open"])
-                close_price = float(c["close"])
+def calcular_resultado(candle, direcao):
+    open_price = candle["open"]
+    close_price = candle["close"]
 
-                if abs(close_price - open_price) < 0.00001:
-                    return "DOJI"
+    if abs(close_price - open_price) < 0.00001:
+        return "DOJI", "DOJI"
 
-                candle_dir = "CALL" if close_price > open_price else "PUT"
-                return "WIN" if candle_dir == direcao else "LOSS"
+    candle_dir = "CALL" if close_price > open_price else "PUT"
+    resultado = "WIN" if candle_dir == direcao else "LOSS"
+    return resultado, candle_dir
 
-            except Exception as e:
-                print("Erro candle:", e)
-                continue
-
-        time.sleep(0.25)
-
-    return "TIMEOUT"
+def montar_debug(candle, direcao, resultado, candle_dir):
+    dt = candle["datetime"].strftime("%H:%M")
+    return (
+        f"🔎 DEBUG DO CANDLE
+"
+        f"⏱ Horário: {dt}
+"
+        f"📈 Open: {candle['open']}
+"
+        f"📉 Close: {candle['close']}
+"
+        f"➡️ Direção do candle: {candle_dir}
+"
+        f"🎯 Sinal: {direcao}
+"
+        f"📊 Resultado: {resultado}"
+    )
 
 # ==============================
-# MENU
+# MENUS
 # ==============================
 
 def menu_paridades():
@@ -191,7 +209,6 @@ def run(c):
 
     sinal = None
     inicio = time.time()
-
     while time.time() - inicio < 35:
         candles = buscar_candles(par)
         if candles:
@@ -232,8 +249,20 @@ def run(c):
 
     # ENTRADA 1
     esperar_ate(entrada + timedelta(minutes=1))
-    time.sleep(1.5)
-    resultado = resultado_real(par, sinal, horario_entrada)
+    time.sleep(1.0)
+
+    candle_entrada = encontrar_candle(par, horario_entrada, timeout_seg=120)
+    if not candle_entrada:
+        bot.send_message(
+            c.message.chat.id,
+            f"⚠️ Não consegui confirmar o candle da entrada {horario_entrada}.",
+            reply_markup=botao_novo_sinal()
+        )
+        return
+
+    resultado, candle_dir = calcular_resultado(candle_entrada, sinal)
+
+    bot.send_message(c.message.chat.id, montar_debug(candle_entrada, sinal, resultado, candle_dir))
 
     # GALE
     if resultado != "WIN":
@@ -241,9 +270,21 @@ def run(c):
             c.message.chat.id,
             f"⚠️ {horario_entrada} LOSS → GALE {horario_gale}..."
         )
+
         esperar_ate(gale + timedelta(minutes=1))
-        time.sleep(1.5)
-        resultado = resultado_real(par, sinal, horario_gale)
+        time.sleep(1.0)
+
+        candle_gale = encontrar_candle(par, horario_gale, timeout_seg=120)
+        if not candle_gale:
+            bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Não consegui confirmar o candle do Gale {horario_gale}.",
+                reply_markup=botao_novo_sinal()
+            )
+            return
+
+        resultado, candle_dir = calcular_resultado(candle_gale, sinal)
+        bot.send_message(c.message.chat.id, montar_debug(candle_gale, sinal, resultado, candle_dir))
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
 
@@ -254,6 +295,6 @@ def run(c):
         reply_markup=botao_novo_sinal()
     )
 
-print("BOT ONLINE - QUANTIX VERSÃO 2")
+print("BOT ONLINE - QUANTIX COMPLETO COM DEBUG")
 
 bot.infinity_polling(timeout=15, long_polling_timeout=15, skip_pending=True)
