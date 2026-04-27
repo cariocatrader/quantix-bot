@@ -54,11 +54,9 @@ def buscar_candles(paridade):
 def analisar(candles):
     if len(candles) < 4:
         return None
-
     ultimos = candles[0:3]
     altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
     baixas = 3 - altas
-
     if altas >= 2:
         return "CALL"
     if baixas >= 2:
@@ -89,9 +87,7 @@ def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
                         return {
                             "datetime": ct,
                             "open": float(c["open"]),
-                            "close": float(c["close"]),
-                            "high": float(c["high"]) if "high" in c else None,
-                            "low": float(c["low"]) if "low" in c else None
+                            "close": float(c["close"])
                         }
                 except:
                     continue
@@ -110,7 +106,7 @@ def calcular_resultado(candle, direcao):
 def montar_debug(candle, direcao, resultado, candle_dir):
     dt = candle["datetime"].strftime("%H:%M")
     return (
-        f"🔎 DEBUG DO CANDLE
+        "🔎 DEBUG DO CANDLE
 "
         f"⏱ Horário: {dt}
 "
@@ -171,7 +167,6 @@ def run(c):
 
     sinal = None
     inicio = time.time()
-
     while time.time() - inicio < 35:
         candles = buscar_candles(par)
         if candles:
@@ -201,13 +196,15 @@ def run(c):
 
     bot.send_message(
         c.message.chat.id,
-        f"""
-📊 SINAL:
-📊 {BANDERAS[par]} {par}
-⏱ M1
-🎯 {horario_entrada} ({sinal})
-⏳ Gale: {horario_gale}
-"""
+        "📊 SINAL:
+"
+        f"📊 {BANDERAS[par]} {par}
+"
+        "⏱ M1
+"
+        f"🎯 {horario_entrada} ({sinal})
+"
+        f"⏳ Gale: {horario_gale}"
     )
 
     esperar_ate(entrada + timedelta(minutes=1))
@@ -223,7 +220,6 @@ def run(c):
         return
 
     resultado, candle_dir = calcular_resultado(candle_entrada, sinal)
-
     bot.send_message(c.message.chat.id, montar_debug(candle_entrada, sinal, resultado, candle_dir))
 
     if resultado != "WIN":
@@ -248,7 +244,6 @@ def run(c):
         bot.send_message(c.message.chat.id, montar_debug(candle_gale, sinal, resultado, candle_dir))
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
-
     bot.send_animation(
         c.message.chat.id,
         open(gif, "rb"),
@@ -256,6 +251,6 @@ def run(c):
         reply_markup=botao_novo_sinal()
     )
 
-print("BOT ONLINE - QUANTIX COMPLETO COM DEBUG")
+print("BOT ONLINE - QUANTIX COMPLETO")
 
 bot.infinity_polling(timeout=15, long_polling_timeout=15, skip_pending=True)
