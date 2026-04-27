@@ -1,5 +1,6 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot import types
 import requests
 import time
 from datetime import datetime, timedelta
@@ -34,8 +35,16 @@ BANDERAS = {
     "GBP/JPY": "🇬🇧🇯🇵"
 }
 
+def send_gif(chat_id, path, caption, reply_markup=None):
+    with open(path, "rb") as f:
+        return bot.send_document(chat_id, f, caption=caption, reply_markup=reply_markup)
+
 def buscar_candles(paridade):
-    url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=50&timezone=America/Sao_Paulo&apikey={API_KEY}"
+    url = (
+        f"https://api.twelvedata.com/time_series?"
+        f"symbol={paridade}&interval=1min&outputsize=50"
+        f"&timezone=America/Sao_Paulo&apikey={API_KEY}"
+    )
     try:
         r = requests.get(url, timeout=5)
         data = r.json()
@@ -137,11 +146,10 @@ def run(c):
     except:
         pass
 
-    anim = bot.send_animation(c.message.chat.id, open(GIF_ANALISE, "rb"), caption="Analisando...")
+    send_gif(c.message.chat.id, GIF_ANALISE, "🔎 Analisando...")
 
     sinal = None
     inicio = time.time()
-
     while time.time() - inicio < 35:
         candles = buscar_candles(par)
         if candles:
@@ -150,13 +158,8 @@ def run(c):
                 break
         time.sleep(1)
 
-    try:
-        bot.delete_message(c.message.chat.id, anim.message_id)
-    except:
-        pass
-
     if not sinal:
-        bot.send_message(c.message.chat.id, "Sem sinal válido.", reply_markup=botao_novo_sinal())
+        bot.send_message(c.message.chat.id, "❌ Sem sinal válido.", reply_markup=botao_novo_sinal())
         return
 
     entrada = proxima_entrada_real()
@@ -167,11 +170,12 @@ def run(c):
 
     bot.send_message(
         c.message.chat.id,
-        "SINAL GERADO\n"
-        f"Paridade: {BANDERAS[par]} {par}\n"
-        f"Timeframe: M1\n"
-        f"Entrada: {horario_entrada} ({sinal})\n"
-        f"Gale: {horario_gale}"
+        f"🚀 SINAL ENVIADO\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💱 Paridade: {BANDERAS[par]} {par}\n"
+        f"⏱ Entrada: {horario_entrada}\n"
+        f"🎯 Direção: {sinal}\n"
+        f"⏳ Gale: {horario_gale}"
     )
 
     esperar_ate(entrada + timedelta(minutes=1))
@@ -179,31 +183,60 @@ def run(c):
 
     candle_entrada = encontrar_candle(par, horario_entrada, timeout_seg=120)
     if not candle_entrada:
-        bot.send_message(c.message.chat.id, f"Nao consegui confirmar a entrada {horario_entrada}.", reply_markup=botao_novo_sinal())
+        bot.send_message(
+            c.message.chat.id,
+            f"⚠️ Não consegui confirmar a entrada {horario_entrada}.",
+            reply_markup=botao_novo_sinal()
+        )
         return
 
-    resultado = calcular_resultado(candle_entrada, sinal)
+    resultado_entrada = calcular_resultado(candle_entrada, sinal)
 
-    if resultado != "WIN":
-        bot.send_message(c.message.chat.id, f"{horario_entrada} LOSS -> GALE {horario_gale}...")
-        esperar_ate(gale + timedelta(minutes=1))
-        time.sleep(1.0)
+    if resultado_entrada == "WIN":
+        texto_resultado = (
+            f"🏁 RESULTADO FINAL 🟢\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💱 Paridade: {BANDERAS[par]} {par}\n"
+            f"⏱ Entrada: {horario_entrada}\n"
+            f"🎯 Direção: {sinal}\n"
+            f"🕒 Fechamento: {horario_entrada}\n"
+            f"📊 Resultado: WIN"
+        )
+        send_gif(c.message.chat.id, GIF_WIN, texto_resultado, reply_markup=botao_novo_sinal())
+        return
 
-        candle_gale = encontrar_candle(par, horario_gale, timeout_seg=120)
-        if not candle_gale:
-            bot.send_message(c.message.chat.id, f"Nao consegui confirmar o Gale {horario_gale}.", reply_markup=botao_novo_sinal())
-            return
-
-        resultado = calcular_resultado(candle_gale, sinal)
-
-    gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
-
-    bot.send_animation(
+    bot.send_message(
         c.message.chat.id,
-        open(gif, "rb"),
-        caption=f"Final: {resultado}",
-        reply_markup=botao_novo_sinal()
+        f"⚠️ {horario_entrada} LOSS -> GALE {horario_gale}..."
     )
+
+    esperar_ate(gale + timedelta(minutes=1))
+    time.sleep(1.0)
+
+    candle_gale = encontrar_candle(par, horario_gale, timeout_seg=120)
+    if not candle_gale:
+        bot.send_message(
+            c.message.chat.id,
+            f"⚠️ Não consegui confirmar o Gale {horario_gale}.",
+            reply_markup=botao_novo_sinal()
+        )
+        return
+
+    resultado_gale = calcular_resultado(candle_gale, sinal)
+    gif = GIF_WIN if resultado_gale == "WIN" else GIF_LOSS
+    emoji = "🟢" if resultado_gale == "WIN" else "🔴"
+
+    texto_resultado = (
+        f"🏁 RESULTADO FINAL {emoji}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💱 Paridade: {BANDERAS[par]} {par}\n"
+        f"⏱ Entrada: {horario_entrada}\n"
+        f"🎯 Direção: {sinal}\n"
+        f"🕒 Fechamento: {horario_gale}\n"
+        f"📊 Resultado: {resultado_gale}"
+    )
+
+    send_gif(c.message.chat.id, gif, texto_resultado, reply_markup=botao_novo_sinal())
 
 print("BOT ONLINE - QUANTIX")
 
