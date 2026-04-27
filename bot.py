@@ -1,6 +1,5 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from telebot import types
 import requests
 import time
 from datetime import datetime, timedelta
@@ -37,12 +36,18 @@ BANDERAS = {
 
 def send_gif(chat_id, path, caption, reply_markup=None):
     with open(path, "rb") as f:
-        return bot.send_animation(chat_id, f, caption=caption, reply_markup=reply_markup)
+        return bot.send_animation(
+            chat_id,
+            f,
+            caption=caption,
+            reply_markup=reply_markup,
+            disable_notification=True
+        )
 
-def buscar_candles(paridade):
+def buscar_candles(paridade, outputsize=100):
     url = (
         f"https://api.twelvedata.com/time_series?"
-        f"symbol={paridade}&interval=1min&outputsize=50"
+        f"symbol={paridade}&interval=1min&outputsize={outputsize}"
         f"&timezone=America/Sao_Paulo&order=desc&apikey={API_KEY}"
     )
     try:
@@ -59,13 +64,16 @@ def buscar_candles(paridade):
         return None
 
 def analisar(candles):
-    if len(candles) < 4:
+    if len(candles) < 6:
         return None
-    ultimos = candles[-3:]
-    altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
-    if altas >= 2:
+
+    ultimos = candles[-5:]
+    wins_call = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
+    wins_put = sum(float(c["close"]) < float(c["open"]) for c in ultimos)
+
+    if wins_call >= 4:
         return "CALL"
-    if (3 - altas) >= 2:
+    if wins_put >= 4:
         return "PUT"
     return None
 
@@ -81,11 +89,11 @@ def parse_candle_time(dt_str):
     dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
     return timezone.localize(dt)
 
-def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
+def encontrar_candle(paridade, horario_alvo, timeout_seg=180):
     alvo = datetime.strptime(horario_alvo, "%H:%M").time()
     fim = time.time() + timeout_seg
     while time.time() < fim:
-        candles = buscar_candles(paridade)
+        candles = buscar_candles(paridade, outputsize=120)
         if candles:
             for c in candles:
                 try:
@@ -104,11 +112,15 @@ def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
 def calcular_resultado(candle, direcao):
     open_price = candle["open"]
     close_price = candle["close"]
+
     if abs(close_price - open_price) < 0.00001:
         return "DOJI"
+
     candle_dir = "CALL" if close_price > open_price else "PUT"
+
     if candle_dir == direcao:
         return "WIN"
+
     return "LOSS"
 
 def menu_paridades():
@@ -153,8 +165,9 @@ def run(c):
 
     sinal = None
     inicio = time.time()
-    while time.time() - inicio < 35:
-        candles = buscar_candles(par)
+
+    while time.time() - inicio < 45:
+        candles = buscar_candles(par, outputsize=120)
         if candles:
             sinal = analisar(candles)
             if sinal:
