@@ -55,12 +55,16 @@ def buscar_candles(paridade):
         return None
 
 # ==============================
-# ANALISE
+# ANALISE (CORRIGIDA)
 # ==============================
 
 def analisar(candles):
 
-    ultimos = candles[:3]
+    if len(candles) < 4:
+        return None
+
+    # usar apenas candles FECHADOS
+    ultimos = candles[1:4]
 
     altas = sum(
         float(c["close"]) > float(c["open"])
@@ -108,7 +112,7 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO
+# RESULTADO (CORRIGIDO)
 # ==============================
 
 def resultado_real(paridade, direcao):
@@ -118,15 +122,26 @@ def resultado_real(paridade, direcao):
     if not candles:
         return "LOSS"
 
-    candle = candles[0]
+    if len(candles) < 2:
+        return "LOSS"
 
-    if float(candle["close"]) > float(candle["open"]):
+    # usar candle fechado
+    candle = candles[1]
+
+    open_price = float(candle["open"])
+    close_price = float(candle["close"])
+
+    if close_price > open_price:
 
         return "WIN" if direcao == "CALL" else "LOSS"
 
-    else:
+    elif close_price < open_price:
 
         return "WIN" if direcao == "PUT" else "LOSS"
+
+    else:
+
+        return "LOSS"
 
 # ==============================
 # START
@@ -260,15 +275,17 @@ def run(c):
 
     esperar_ate(entrada)
 
-    # ⚠️ NOVO — espera fechamento do candle
     fechamento = entrada + timedelta(minutes=1)
 
     esperar_ate(fechamento)
 
+    # delay extra para garantir candle fechado
+    time.sleep(3)
+
     resultado = resultado_real(par, sinal)
 
     # ==============================
-    # GALE
+    # GALE (CORRIGIDO)
     # ==============================
 
     if resultado == "LOSS":
@@ -278,7 +295,11 @@ def run(c):
             "⚠️ Entrando em GALE 1..."
         )
 
-        esperar_ate(gale + timedelta(minutes=1))
+        fechamento_gale = gale + timedelta(minutes=1)
+
+        esperar_ate(fechamento_gale)
+
+        time.sleep(3)
 
         resultado = resultado_real(par, sinal)
 
