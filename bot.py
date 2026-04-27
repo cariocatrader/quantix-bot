@@ -37,13 +37,13 @@ BANDERAS = {
 
 def send_gif(chat_id, path, caption, reply_markup=None):
     with open(path, "rb") as f:
-        return bot.send_document(chat_id, f, caption=caption, reply_markup=reply_markup)
+        return bot.send_animation(chat_id, f, caption=caption, reply_markup=reply_markup)
 
 def buscar_candles(paridade):
     url = (
         f"https://api.twelvedata.com/time_series?"
         f"symbol={paridade}&interval=1min&outputsize=50"
-        f"&timezone=America/Sao_Paulo&apikey={API_KEY}"
+        f"&timezone=America/Sao_Paulo&order=desc&apikey={API_KEY}"
     )
     try:
         r = requests.get(url, timeout=5)
@@ -51,7 +51,9 @@ def buscar_candles(paridade):
         if "values" not in data:
             print("Erro API:", data)
             return None
-        return data["values"]
+        candles = data["values"]
+        candles.reverse()
+        return candles
     except Exception as e:
         print("Erro buscar candles:", e)
         return None
@@ -59,7 +61,7 @@ def buscar_candles(paridade):
 def analisar(candles):
     if len(candles) < 4:
         return None
-    ultimos = candles[0:3]
+    ultimos = candles[-3:]
     altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
     if altas >= 2:
         return "CALL"
@@ -80,6 +82,7 @@ def parse_candle_time(dt_str):
     return timezone.localize(dt)
 
 def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
+    alvo = datetime.strptime(horario_alvo, "%H:%M").time()
     fim = time.time() + timeout_seg
     while time.time() < fim:
         candles = buscar_candles(paridade)
@@ -87,7 +90,7 @@ def encontrar_candle(paridade, horario_alvo, timeout_seg=120):
             for c in candles:
                 try:
                     ct = parse_candle_time(c["datetime"])
-                    if ct.strftime("%H:%M") == horario_alvo:
+                    if ct.time().hour == alvo.hour and ct.time().minute == alvo.minute:
                         return {
                             "datetime": ct,
                             "open": float(c["open"]),
@@ -179,9 +182,9 @@ def run(c):
     )
 
     esperar_ate(entrada + timedelta(minutes=1))
-    time.sleep(1.0)
+    time.sleep(0.5)
 
-    candle_entrada = encontrar_candle(par, horario_entrada, timeout_seg=120)
+    candle_entrada = encontrar_candle(par, horario_entrada, timeout_seg=180)
     if not candle_entrada:
         bot.send_message(
             c.message.chat.id,
@@ -205,15 +208,12 @@ def run(c):
         send_gif(c.message.chat.id, GIF_WIN, texto_resultado, reply_markup=botao_novo_sinal())
         return
 
-    bot.send_message(
-        c.message.chat.id,
-        f"⚠️ {horario_entrada} LOSS -> GALE {horario_gale}..."
-    )
+    bot.send_message(c.message.chat.id, f"⚠️ {horario_entrada} LOSS -> GALE {horario_gale}...")
 
     esperar_ate(gale + timedelta(minutes=1))
-    time.sleep(1.0)
+    time.sleep(0.5)
 
-    candle_gale = encontrar_candle(par, horario_gale, timeout_seg=120)
+    candle_gale = encontrar_candle(par, horario_gale, timeout_seg=180)
     if not candle_gale:
         bot.send_message(
             c.message.chat.id,
