@@ -1,11 +1,24 @@
 import telebot
 import requests
-import time
 import threading
+import time
+import os
 from datetime import datetime
 
-TOKEN = "8516808804:AAF9zu8zHqIAI2yAaFl77poNpLpsDVoZ9Kc"
+# =========================
+# TOKEN VIA VARIÁVEL ENV
+# =========================
+
+TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    raise Exception("TOKEN não encontrado nas variáveis de ambiente")
+
 bot = telebot.TeleBot(TOKEN)
+
+# =========================
+# CRIPTOS
+# =========================
 
 SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
@@ -13,7 +26,7 @@ SYMBOLS = [
 ]
 
 # =========================
-# PEGAR CANDLE REAL
+# CANDLE BINANCE
 # =========================
 
 def get_candle(symbol):
@@ -28,7 +41,7 @@ def get_candle(symbol):
     return open_price, close_price
 
 # =========================
-# ANALISE DO SINAL
+# SINAL
 # =========================
 
 def analyze(symbol):
@@ -38,11 +51,10 @@ def analyze(symbol):
         return "COMPRA"
     elif c < o:
         return "VENDA"
-
     return None
 
 # =========================
-# RESULTADO REAL
+# RESULTADO
 # =========================
 
 def result(symbol, direction):
@@ -57,21 +69,21 @@ def result(symbol, direction):
     return "LOSS"
 
 # =========================
-# BOTÃO NOVO SINAL
+# BOTÃO
 # =========================
 
 def btn():
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("🚀 Gerar novo sinal", callback_data="novo"))
-    return markup
+    kb = telebot.types.InlineKeyboardMarkup()
+    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar novo sinal", callback_data="novo"))
+    return kb
 
 # =========================
-# FLUXO DO SINAL
+# FLUXO PRINCIPAL
 # =========================
 
 def run_signal(chat_id):
 
-    symbol = SYMBOLS[0]  # pode random depois
+    symbol = SYMBOLS[0]
 
     direction = analyze(symbol)
 
@@ -92,7 +104,7 @@ def run_signal(chat_id):
     )
 
     # =========================
-    # ESPERA 1 MIN
+    # EXPIRAÇÃO 1 MIN
     # =========================
 
     time.sleep(60)
@@ -144,27 +156,48 @@ def run_signal(chat_id):
     )
 
 # =========================
-# TELEGRAM
+# START BOT
 # =========================
 
 @bot.message_handler(commands=["start"])
 def start(m):
-    bot.send_message(
-        m.chat.id,
-        "📊 Quantix Cripto Trader",
-        reply_markup=telebot.types.InlineKeyboardMarkup().add(
-            telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="gerar")
-        )
-    )
+    kb = telebot.types.InlineKeyboardMarkup()
+    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="gerar"))
+
+    bot.send_message(m.chat.id, "📊 Bot de sinais ativo", reply_markup=kb)
+
+# =========================
+# CALLBACK GERAR
+# =========================
 
 @bot.callback_query_handler(func=lambda c: c.data == "gerar")
 def gerar(c):
     bot.answer_callback_query(c.id)
-    run_signal(c.message.chat.id)
+
+    threading.Thread(
+        target=run_signal,
+        args=(c.message.chat.id,),
+        daemon=True
+    ).start()
+
+# =========================
+# CALLBACK NOVO
+# =========================
 
 @bot.callback_query_handler(func=lambda c: c.data == "novo")
 def novo(c):
     bot.answer_callback_query(c.id)
-    run_signal(c.message.chat.id)
+
+    threading.Thread(
+        target=run_signal,
+        args=(c.message.chat.id,),
+        daemon=True
+    ).start()
+
+# =========================
+# LOOP
+# =========================
+
+print("BOT ONLINE")
 
 bot.infinity_polling()
