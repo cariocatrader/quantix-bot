@@ -78,7 +78,7 @@ def analisar(candles):
     return None
 
 # ==============================
-# PRÓXIMA ENTRADA (FIX DEFINITIVO)
+# PRÓXIMA ENTRADA
 # ==============================
 
 def proxima_entrada_real():
@@ -93,7 +93,7 @@ def proxima_entrada_real():
     return entrada
 
 # ==============================
-# ESPERA SINCRONIZADA
+# ESPERA
 # ==============================
 
 def esperar_ate(timestamp):
@@ -108,18 +108,17 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO REAL
+# RESULTADO
 # ==============================
 
 def resultado_real(paridade, direcao):
 
-    url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=2&apikey={API_KEY}"
+    candles = buscar_candles(paridade)
 
-    r = requests.get(url, timeout=10)
+    if not candles:
+        return "LOSS"
 
-    data = r.json()
-
-    candle = data["values"][0]
+    candle = candles[0]
 
     if float(candle["close"]) > float(candle["open"]):
 
@@ -235,10 +234,6 @@ def run(c):
 
         return
 
-    # ==============================
-    # HORÁRIO CORRIGIDO
-    # ==============================
-
     entrada = proxima_entrada_real()
 
     gale = entrada + timedelta(minutes=1)
@@ -259,7 +254,16 @@ def run(c):
 """
     )
 
+    # ==============================
+    # ESPERA ENTRADA
+    # ==============================
+
     esperar_ate(entrada)
+
+    # ⚠️ NOVO — espera fechamento do candle
+    fechamento = entrada + timedelta(minutes=1)
+
+    esperar_ate(fechamento)
 
     resultado = resultado_real(par, sinal)
 
@@ -274,7 +278,7 @@ def run(c):
             "⚠️ Entrando em GALE 1..."
         )
 
-        esperar_ate(gale)
+        esperar_ate(gale + timedelta(minutes=1))
 
         resultado = resultado_real(par, sinal)
 
@@ -309,8 +313,6 @@ def run(c):
         "🔁 Operação finalizada",
         reply_markup=kb
     )
-
-# ==============================
 
 print("BOT ONLINE")
 
