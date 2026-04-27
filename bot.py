@@ -119,12 +119,12 @@ def esperar_ate(timestamp):
 
 
 # ==============================
-# RESULTADO REAL FINAL
+# RESULTADO REAL
 # ==============================
 
 def resultado_real(paridade, direcao, horario):
 
-    for tentativa in range(6):
+    for tentativa in range(5):
 
         candles = buscar_candles(paridade)
 
@@ -161,7 +161,7 @@ def resultado_real(paridade, direcao, horario):
 
                 return "LOSS"
 
-        time.sleep(3)
+        time.sleep(2)
 
     return "LOSS"
 
@@ -185,36 +185,6 @@ def start(m):
     bot.send_message(
         m.chat.id,
         "👋 Bem-vindo ao Quantix",
-        reply_markup=kb
-    )
-
-
-# ==============================
-# PARIDADES
-# ==============================
-
-@bot.callback_query_handler(func=lambda c: c.data == "gerar")
-def paridades(c):
-
-    bot.delete_message(
-        c.message.chat.id,
-        c.message.message_id
-    )
-
-    kb = InlineKeyboardMarkup()
-
-    for p in PARIDADES:
-
-        kb.add(
-            InlineKeyboardButton(
-                f"{BANDERAS[p]} {p}",
-                callback_data=f"p_{p}"
-            )
-        )
-
-    bot.send_message(
-        c.message.chat.id,
-        "📊 Escolha a paridade:",
         reply_markup=kb
     )
 
@@ -294,8 +264,8 @@ def run(c):
 
     esperar_ate(fechamento)
 
-    # espera candle fechar completamente
-    time.sleep(25)
+    # ⏱ tempo ideal
+    time.sleep(12)
 
     resultado = resultado_real(
         par,
@@ -312,7 +282,8 @@ def run(c):
 
         esperar_ate(gale + timedelta(minutes=1))
 
-        time.sleep(25)
+        # ⏱ tempo ideal
+        time.sleep(12)
 
         resultado = resultado_real(
             par,
