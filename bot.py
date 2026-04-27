@@ -3,7 +3,7 @@ import requests
 import time
 from datetime import datetime
 
-TOKEN = "SEU_TOKEN"
+TOKEN = "8516808804:AAF9zu8zHqIAI2yAaFl77poNpLpsDVoZ9Kc"
 bot = telebot.TeleBot(TOKEN)
 
 SYMBOLS = [
