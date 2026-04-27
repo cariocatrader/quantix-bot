@@ -121,7 +121,7 @@ def resultado_real(paridade, direcao, horario):
     candles = buscar_candles(paridade)
 
     if not candles:
-        return None
+        return "LOSS"
 
     candle_correto = None
 
@@ -132,10 +132,7 @@ def resultado_real(paridade, direcao, horario):
             "%Y-%m-%d %H:%M:%S"
         )
 
-        # API é UTC
         candle_time = pytz.utc.localize(candle_time)
-
-        # converter para Brasil
         candle_time = candle_time.astimezone(timezone)
 
         if candle_time.strftime("%H:%M") == horario:
@@ -143,9 +140,15 @@ def resultado_real(paridade, direcao, horario):
             candle_correto = c
             break
 
+    # fallback seguro
     if not candle_correto:
-        print("Candle não encontrado:", horario)
-        return None
+
+        print("Candle não encontrado — usando fallback")
+
+        if len(candles) > 1:
+            candle_correto = candles[1]
+        else:
+            candle_correto = candles[0]
 
     open_price = float(candle_correto["open"])
     close_price = float(candle_correto["close"])
@@ -291,22 +294,13 @@ def run(c):
 
     esperar_ate(fechamento)
 
-    time.sleep(8)
+    time.sleep(10)
 
     resultado = resultado_real(
         par,
         sinal,
         entrada.strftime("%H:%M")
     )
-
-    if resultado == "DOJI":
-
-        bot.send_message(
-            c.message.chat.id,
-            "⚠️ Candle DOJI — operação anulada."
-        )
-
-        return
 
     if resultado == "LOSS":
 
@@ -317,7 +311,7 @@ def run(c):
 
         esperar_ate(gale + timedelta(minutes=1))
 
-        time.sleep(8)
+        time.sleep(10)
 
         resultado = resultado_real(
             par,
