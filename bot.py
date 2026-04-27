@@ -62,7 +62,6 @@ def buscar_candles(paridade):
         print("Erro buscar candles:", e)
         return None
 
-
 # ==============================
 # ANALISE
 # ==============================
@@ -89,7 +88,6 @@ def analisar(candles):
 
     return None
 
-
 # ==============================
 # TEMPO
 # ==============================
@@ -105,7 +103,6 @@ def proxima_entrada_real():
 
     return entrada
 
-
 def esperar_ate(timestamp):
 
     while True:
@@ -117,14 +114,18 @@ def esperar_ate(timestamp):
 
         time.sleep(0.2)
 
-
 # ==============================
-# RESULTADO REAL
+# RESULTADO REAL (CORRIGIDO)
 # ==============================
 
-def resultado_real(paridade, direcao, horario):
+def resultado_real(paridade, direcao, horario_base):
 
-    for tentativa in range(5):
+    horario_candle = (
+        datetime.strptime(horario_base,"%H:%M")
+        + timedelta(minutes=1)
+    ).strftime("%H:%M")
+
+    for tentativa in range(6):
 
         candles = buscar_candles(paridade)
 
@@ -142,7 +143,7 @@ def resultado_real(paridade, direcao, horario):
             candle_time = pytz.utc.localize(candle_time)
             candle_time = candle_time.astimezone(timezone)
 
-            if candle_time.strftime("%H:%M") == horario:
+            if candle_time.strftime("%H:%M") == horario_candle:
 
                 open_price = float(c["open"])
                 close_price = float(c["close"])
@@ -164,7 +165,6 @@ def resultado_real(paridade, direcao, horario):
         time.sleep(2)
 
     return "LOSS"
-
 
 # ==============================
 # START
@@ -188,7 +188,6 @@ def start(m):
         reply_markup=kb
     )
 
-
 # ==============================
 # EXECUÇÃO
 # ==============================
@@ -206,7 +205,7 @@ def run(c):
     msg = bot.send_animation(
         c.message.chat.id,
         open(GIF_ANALISE, "rb"),
-        caption="🔎 Quantix está analisando o mercado..."
+        caption="🔎 Quantix analisando..."
     )
 
     sinal = None
@@ -246,6 +245,9 @@ def run(c):
     entrada = proxima_entrada_real()
     gale = entrada + timedelta(minutes=1)
 
+    horario_entrada = entrada.strftime("%H:%M")
+    horario_gale = gale.strftime("%H:%M")
+
     bot.send_message(
         c.message.chat.id,
         f"""
@@ -253,24 +255,19 @@ def run(c):
 
 📊 Paridade: {BANDERAS[par]} {par}
 ⏱ Timeframe: M1
-🎯 Entrada: {entrada.strftime('%H:%M')} ({sinal})
-⏳ Gale: {gale.strftime('%H:%M')}
+🎯 Entrada: {horario_entrada} ({sinal})
+⏳ Gale: {horario_gale}
 """
     )
 
-    esperar_ate(entrada)
+    esperar_ate(entrada + timedelta(minutes=1))
 
-    fechamento = entrada + timedelta(minutes=1)
-
-    esperar_ate(fechamento)
-
-    # ⏱ tempo ideal
     time.sleep(12)
 
     resultado = resultado_real(
         par,
         sinal,
-        entrada.strftime("%H:%M")
+        horario_entrada
     )
 
     if resultado == "LOSS":
@@ -282,13 +279,12 @@ def run(c):
 
         esperar_ate(gale + timedelta(minutes=1))
 
-        # ⏱ tempo ideal
         time.sleep(12)
 
         resultado = resultado_real(
             par,
             sinal,
-            gale.strftime("%H:%M")
+            horario_gale
         )
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
@@ -297,21 +293,6 @@ def run(c):
         c.message.chat.id,
         open(gif, "rb"),
         caption=f"📊 Resultado: {resultado}"
-    )
-
-    kb = InlineKeyboardMarkup()
-
-    kb.add(
-        InlineKeyboardButton(
-            "🚀 Novo Sinal",
-            callback_data="gerar"
-        )
-    )
-
-    bot.send_message(
-        c.message.chat.id,
-        "🔁 Operação finalizada",
-        reply_markup=kb
     )
 
 print("BOT ONLINE")
