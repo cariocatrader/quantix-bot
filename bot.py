@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytz
 import os
 
-TOKEN = os.getenv("TOKEN")  # Sem API_KEY — Binance é gratuita e sem autenticação
+TOKEN = os.getenv("TOKEN")
 
 bot = telebot.TeleBot(TOKEN)
 timezone = pytz.timezone("America/Sao_Paulo")
@@ -16,61 +16,65 @@ GIF_ANALISE = "analise.gif"
 GIF_WIN     = "win.gif"
 GIF_LOSS    = "loss.gif"
 
-# ─── Pares de cripto (símbolos Binance) ───────────────────────────────────────
 PARIDADES = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "ADAUSDT", "DOGEUSDT", "MATICUSDT", "LTCUSDT", "DOTUSDT"
+    "bitcoin", "ethereum", "binancecoin", "solana", "ripple",
+    "cardano", "dogecoin", "litecoin", "polkadot", "avalanche-2"
 ]
 
 DISPLAY = {
-    "BTCUSDT":   ("BTC/USDT",  "₿🟡"),
-    "ETHUSDT":   ("ETH/USDT",  "Ξ🔵"),
-    "BNBUSDT":   ("BNB/USDT",  "🟠"),
-    "SOLUSDT":   ("SOL/USDT",  "🟣"),
-    "XRPUSDT":   ("XRP/USDT",  "💧"),
-    "ADAUSDT":   ("ADA/USDT",  "🔷"),
-    "DOGEUSDT":  ("DOGE/USDT", "🐶"),
-    "MATICUSDT": ("POL/USDT",  "🔺"),
-    "LTCUSDT":   ("LTC/USDT",  "🪙"),
-    "DOTUSDT":   ("DOT/USDT",  "⚫"),
+    "bitcoin":      ("BTC/USDT", "₿🟡"),
+    "ethereum":     ("ETH/USDT", "Ξ🔵"),
+    "binancecoin":  ("BNB/USDT", "🟠"),
+    "solana":       ("SOL/USDT", "🟣"),
+    "ripple":       ("XRP/USDT", "💧"),
+    "cardano":      ("ADA/USDT", "🔷"),
+    "dogecoin":     ("DOGE/USDT","🐶"),
+    "litecoin":     ("LTC/USDT", "🪙"),
+    "polkadot":     ("DOT/USDT", "⚫"),
+    "avalanche-2":  ("AVAX/USDT","🔺"),
 }
 
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BINANCE API
+# COINGECKO API  — candles de 1 minuto via /ohlc (grátis, sem chave, sem bloqueio)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def buscar_candles(symbol, limit=40):
+def buscar_candles(coin_id, limit=40):
     """
-    Retorna candles de 1min da Binance, do mais antigo ao mais novo.
-    Cada item: {"datetime": datetime, "open": float, "close": float}
+    CoinGecko /ohlc retorna velas de 1min para janela de 1 dia.
+    Cada vela: [timestamp_ms, open, high, low, close]
     """
-    url = "https://api.binance.com/api/v3/klines"
-    params = {"symbol": symbol, "interval": "1m", "limit": limit}
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
+    params = {"vs_currency": "usd", "days": "1"}
 
     try:
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, headers=HEADERS, timeout=10)
         r.raise_for_status()
         raw = r.json()
 
+        if not isinstance(raw, list) or len(raw) == 0:
+            print(f"CoinGecko sem dados para {coin_id}:", raw)
+            return None
+
         candles = []
         for k in raw:
-            ts    = k[0] / 1000          # timestamp abertura em segundos
+            dt    = datetime.fromtimestamp(k[0] / 1000, tz=timezone)
             open_ = float(k[1])
-            close = float(k[4])
-            dt    = datetime.fromtimestamp(ts, tz=timezone)
+            close = float(k[4]) if len(k) > 4 else float(k[3])
             candles.append({"datetime": dt, "open": open_, "close": close})
 
-        # O último candle ainda está aberto — descarta
-        return candles[:-1]
+        # ordena do mais antigo ao mais novo e retorna os últimos `limit`
+        candles.sort(key=lambda c: c["datetime"])
+        return candles[-limit:]
 
     except Exception as e:
-        print(f"Erro buscar_candles ({symbol}):", e)
+        print(f"Erro buscar_candles ({coin_id}):", e)
         return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ANÁLISE  (2 de 3 últimas velas fechadas na mesma direção)
+# ANÁLISE
 # ─────────────────────────────────────────────────────────────────────────────
 
 def analisar(candles):
@@ -78,8 +82,12 @@ def analisar(candles):
         return None
 
     ultimos = candles[-3:]
-    altas  = sum(c["close"] > c["open"] for c in ultimos)
-    baixas = 3 - altas
+    altas   = sum(c["close"] > c["open"] for c in ultimos)
+    baixas  = 3 - altas
+
+    print(f"  Análise → altas={altas} baixas={baixas}")
+    for c in ultimos:
+        print(f"    {c['datetime'].strftime('%H:%M')} open={c['open']:.4f} close={c['close']:.4f} {'▲' if c['close']>c['open'] else '▼'}")
 
     if altas >= 2:
         return "CALL"
@@ -103,18 +111,14 @@ def esperar_ate(ts):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BUSCA CANDLE ESPECÍFICO (por datetime completo)
+# BUSCA CANDLE ESPECÍFICO
 # ─────────────────────────────────────────────────────────────────────────────
 
-def encontrar_candle(symbol, alvo_dt, timeout_seg=150):
-    """
-    Aguarda e retorna o candle cujo minuto de abertura coincide com alvo_dt.
-    Compara data completa para evitar colisão em viradas de hora/dia.
-    """
+def encontrar_candle(coin_id, alvo_dt, timeout_seg=150):
     fim = time.time() + timeout_seg
 
     while time.time() < fim:
-        candles = buscar_candles(symbol, limit=10)
+        candles = buscar_candles(coin_id, limit=10)
 
         if candles:
             for c in reversed(candles):
@@ -126,7 +130,7 @@ def encontrar_candle(symbol, alvo_dt, timeout_seg=150):
                     cd.minute == alvo_dt.minute):
                     return c
 
-        time.sleep(3)
+        time.sleep(5)
 
     return None
 
@@ -148,9 +152,9 @@ def calcular_resultado(candle, direcao):
 
 def menu_paridades():
     kb = InlineKeyboardMarkup(row_width=2)
-    for sym in PARIDADES:
-        nome, emoji = DISPLAY[sym]
-        kb.add(InlineKeyboardButton(f"{emoji} {nome}", callback_data=f"p_{sym}"))
+    for coin in PARIDADES:
+        nome, emoji = DISPLAY[coin]
+        kb.add(InlineKeyboardButton(f"{emoji} {nome}", callback_data=f"p_{coin}"))
     return kb
 
 
@@ -177,17 +181,17 @@ def delete_msg(chat_id, msg_id):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FLUXO PRINCIPAL  (roda em thread separada por usuário)
+# FLUXO PRINCIPAL
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fluxo_sinal(chat_id, symbol, msg_analise_id):
-    nome, emoji = DISPLAY[symbol]
+def fluxo_sinal(chat_id, coin_id, msg_analise_id):
+    nome, emoji = DISPLAY[coin_id]
 
     # ── 1. Análise ────────────────────────────────────────────────────────────
-    candles = buscar_candles(symbol, limit=40)
+    candles = buscar_candles(coin_id, limit=40)
     sinal   = analisar(candles) if candles else None
 
-    delete_msg(chat_id, msg_analise_id)   # remove GIF de análise
+    delete_msg(chat_id, msg_analise_id)
 
     if not sinal:
         bot.send_message(
@@ -213,9 +217,9 @@ def fluxo_sinal(chat_id, symbol, msg_analise_id):
 
     # ── 3. Aguarda fechamento da vela de entrada ──────────────────────────────
     esperar_ate(entrada_dt + timedelta(minutes=1))
-    time.sleep(2)
+    time.sleep(3)
 
-    candle_entrada = encontrar_candle(symbol, entrada_dt, timeout_seg=120)
+    candle_entrada = encontrar_candle(coin_id, entrada_dt, timeout_seg=120)
 
     if not candle_entrada:
         bot.send_message(
@@ -248,9 +252,9 @@ def fluxo_sinal(chat_id, symbol, msg_analise_id):
     )
 
     esperar_ate(gale_dt + timedelta(minutes=1))
-    time.sleep(2)
+    time.sleep(3)
 
-    candle_gale = encontrar_candle(symbol, gale_dt, timeout_seg=120)
+    candle_gale = encontrar_candle(coin_id, gale_dt, timeout_seg=120)
 
     if not candle_gale:
         bot.send_message(
@@ -304,7 +308,7 @@ def gerar(c):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
 def run(c):
-    symbol = c.data.split("_", 1)[1]
+    coin_id = c.data.split("_", 1)[1]
     bot.answer_callback_query(c.id)
 
     delete_msg(c.message.chat.id, c.message.message_id)
@@ -313,7 +317,7 @@ def run(c):
 
     threading.Thread(
         target=fluxo_sinal,
-        args=(c.message.chat.id, symbol, msg_analise.message_id),
+        args=(c.message.chat.id, coin_id, msg_analise.message_id),
         daemon=True
     ).start()
 
