@@ -65,7 +65,6 @@ def analisar(candles):
     if len(candles) < 4:
         return None
 
-    # candles fechados
     ultimos = candles[1:4]
 
     altas = sum(
@@ -114,21 +113,38 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO REAL (CORRIGIDO)
+# RESULTADO REAL (CORRIGIDO FINAL)
 # ==============================
 
-def resultado_real(paridade, direcao):
+def resultado_real(paridade, direcao, horario):
 
     candles = buscar_candles(paridade)
 
-    if not candles or len(candles) < 2:
+    if not candles:
         return None
 
-    # candle fechado
-    candle = candles[1]
+    candle_correto = None
 
-    open_price = float(candle["open"])
-    close_price = float(candle["close"])
+    for c in candles:
+
+        candle_time = datetime.strptime(
+            c["datetime"],
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        candle_time = timezone.localize(candle_time)
+
+        if candle_time.strftime("%H:%M") == horario:
+
+            candle_correto = c
+            break
+
+    if not candle_correto:
+        print("Candle não encontrado:", horario)
+        return None
+
+    open_price = float(candle_correto["open"])
+    close_price = float(candle_correto["close"])
 
     if close_price > open_price:
 
@@ -140,9 +156,6 @@ def resultado_real(paridade, direcao):
 
     else:
 
-        candle_result = "DOJI"
-
-    if candle_result == "DOJI":
         return "DOJI"
 
     if candle_result == direcao:
@@ -259,10 +272,6 @@ def run(c):
     entrada = proxima_entrada_real()
     gale = entrada + timedelta(minutes=1)
 
-    # ==============================
-    # SINAL
-    # ==============================
-
     bot.send_message(
         c.message.chat.id,
         f"""
@@ -275,22 +284,20 @@ def run(c):
 """
     )
 
-    # ==============================
-    # PRIMEIRA ENTRADA
-    # ==============================
-
     esperar_ate(entrada)
 
     fechamento = entrada + timedelta(minutes=1)
 
     esperar_ate(fechamento)
 
-    # ⚠️ espera atualização da API
-    time.sleep(5)
+    time.sleep(8)
 
-    resultado = resultado_real(par, sinal)
+    resultado = resultado_real(
+        par,
+        sinal,
+        entrada.strftime("%H:%M")
+    )
 
-    # DOJI cancela operação
     if resultado == "DOJI":
 
         bot.send_message(
@@ -299,10 +306,6 @@ def run(c):
         )
 
         return
-
-    # ==============================
-    # GALE
-    # ==============================
 
     if resultado == "LOSS":
 
@@ -313,9 +316,13 @@ def run(c):
 
         esperar_ate(gale + timedelta(minutes=1))
 
-        time.sleep(5)
+        time.sleep(8)
 
-        resultado = resultado_real(par, sinal)
+        resultado = resultado_real(
+            par,
+            sinal,
+            gale.strftime("%H:%M")
+        )
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
 
@@ -323,13 +330,6 @@ def run(c):
         c.message.chat.id,
         open(gif, "rb"),
         caption=f"""
-📊 SINAL GERADO:
-
-📊 Paridade: {BANDERAS[par]} {par}
-⏱ Timeframe: M1
-🎯 Entrada: {entrada.strftime('%H:%M')} ({sinal})
-⏳ Gale: {gale.strftime('%H:%M')}
-
 📊 Resultado: {resultado}
 """
     )
