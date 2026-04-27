@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytz
 import os
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("TOKEN")  # sem API_KEY — CoinCap é gratuita e sem chave
 
 bot = telebot.TeleBot(TOKEN)
 timezone = pytz.timezone("America/Sao_Paulo")
@@ -34,47 +34,67 @@ DISPLAY = {
     "avalanche-2":  ("AVAX/USDT","🔺"),
 }
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+# IDs da CoinCap (diferentes dos do CoinGecko)
+COINCAP_ID = {
+    "bitcoin":      "bitcoin",
+    "ethereum":     "ethereum",
+    "binancecoin":  "binance-coin",
+    "solana":       "solana",
+    "ripple":       "xrp",
+    "cardano":      "cardano",
+    "dogecoin":     "dogecoin",
+    "litecoin":     "litecoin",
+    "polkadot":     "polkadot",
+    "avalanche-2":  "avalanche",
+}
+
+HEADERS = {"Accept-Encoding": "gzip, deflate", "User-Agent": "QuantixBot/1.0"}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COINGECKO API  — candles de 1 minuto via /ohlc (grátis, sem chave, sem bloqueio)
+# COINCAP API  — gratuita, sem chave, sem rate limit agressivo, funciona em cloud
+# Endpoint: GET /v2/assets/{id}/history?interval=m1&start=...&end=...
 # ─────────────────────────────────────────────────────────────────────────────
 
 def buscar_candles(coin_id, limit=40):
     """
-    CoinGecko /ohlc retorna velas de 1min para janela de 1 dia.
-    Cada vela: [timestamp_ms, open, high, low, close]
+    CoinCap retorna histórico de preço minuto a minuto.
+    Como só há um preço por minuto (sem OHLC real), construímos
+    open/close usando o preço do minuto anterior como open.
     """
-    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
-    params = {"vs_currency": "usd", "days": "1"}
+    cap_id = COINCAP_ID.get(coin_id, coin_id)
+    agora  = int(time.time() * 1000)
+    inicio = agora - (limit + 5) * 60 * 1000  # margem de 5min extra
+
+    url = f"https://api.coincap.io/v2/assets/{cap_id}/history"
+    params = {"interval": "m1", "start": inicio, "end": agora}
 
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=10)
         r.raise_for_status()
-        raw = r.json()
+        data = r.json().get("data", [])
 
-        if not isinstance(raw, list) or len(raw) == 0:
-            print(f"CoinGecko sem dados para {coin_id}:", raw)
+        if not data or len(data) < 2:
+            print(f"CoinCap sem dados suficientes para {cap_id}: {len(data)} pontos")
             return None
 
         candles = []
-        for k in raw:
-            dt    = datetime.fromtimestamp(k[0] / 1000, tz=timezone)
-            open_ = float(k[1])
-            close = float(k[4]) if len(k) > 4 else float(k[3])
+        for i in range(1, len(data)):
+            dt    = datetime.fromtimestamp(data[i]["time"] / 1000, tz=timezone)
+            open_ = float(data[i - 1]["priceUsd"])
+            close = float(data[i]["priceUsd"])
             candles.append({"datetime": dt, "open": open_, "close": close})
 
-        # ordena do mais antigo ao mais novo e retorna os últimos `limit`
         candles.sort(key=lambda c: c["datetime"])
         return candles[-limit:]
 
     except Exception as e:
-        print(f"Erro buscar_candles ({coin_id}):", e)
+        print(f"Erro buscar_candles ({cap_id}):", e)
         return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ANÁLISE
+# ANÁLISE  (2 de 3 últimas velas na mesma direção)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def analisar(candles):
@@ -87,7 +107,8 @@ def analisar(candles):
 
     print(f"  Análise → altas={altas} baixas={baixas}")
     for c in ultimos:
-        print(f"    {c['datetime'].strftime('%H:%M')} open={c['open']:.4f} close={c['close']:.4f} {'▲' if c['close']>c['open'] else '▼'}")
+        dir_ = "▲ CALL" if c["close"] > c["open"] else "▼ PUT"
+        print(f"    {c['datetime'].strftime('%H:%M')} open={c['open']:.4f} close={c['close']:.4f} {dir_}")
 
     if altas >= 2:
         return "CALL"
@@ -111,27 +132,36 @@ def esperar_ate(ts):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BUSCA CANDLE ESPECÍFICO
+# BUSCA CANDLE ESPECÍFICO  (tolerância ±2min para cobrir granularidade da API)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def encontrar_candle(coin_id, alvo_dt, timeout_seg=150):
-    fim = time.time() + timeout_seg
+    fim        = time.time() + timeout_seg
+    tolerancia = 120  # segundos
 
     while time.time() < fim:
-        candles = buscar_candles(coin_id, limit=10)
+        candles = buscar_candles(coin_id, limit=20)
 
         if candles:
-            for c in reversed(candles):
-                cd = c["datetime"]
-                if (cd.year   == alvo_dt.year  and
-                    cd.month  == alvo_dt.month  and
-                    cd.day    == alvo_dt.day    and
-                    cd.hour   == alvo_dt.hour   and
-                    cd.minute == alvo_dt.minute):
-                    return c
+            candidatos = [
+                c for c in candles
+                if abs((c["datetime"] - alvo_dt).total_seconds()) <= tolerancia
+            ]
 
-        time.sleep(5)
+            if candidatos:
+                melhor = min(candidatos, key=lambda c: abs((c["datetime"] - alvo_dt).total_seconds()))
+                print(f"  ✅ Candle encontrado: {melhor['datetime'].strftime('%H:%M')} "
+                      f"(alvo={alvo_dt.strftime('%H:%M')}) "
+                      f"open={melhor['open']:.4f} close={melhor['close']:.4f}")
+                return melhor
 
+            mais_recente = candles[-1]
+            print(f"  ⏳ Aguardando {alvo_dt.strftime('%H:%M')}... "
+                  f"mais recente={mais_recente['datetime'].strftime('%H:%M')}")
+
+        time.sleep(10)  # 10s entre tentativas — respeita rate limit
+
+    print(f"  ❌ Timeout: candle de {alvo_dt.strftime('%H:%M')} não encontrado.")
     return None
 
 
@@ -181,7 +211,7 @@ def delete_msg(chat_id, msg_id):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FLUXO PRINCIPAL
+# FLUXO PRINCIPAL  (thread separada por usuário)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fluxo_sinal(chat_id, coin_id, msg_analise_id):
@@ -217,7 +247,7 @@ def fluxo_sinal(chat_id, coin_id, msg_analise_id):
 
     # ── 3. Aguarda fechamento da vela de entrada ──────────────────────────────
     esperar_ate(entrada_dt + timedelta(minutes=1))
-    time.sleep(3)
+    time.sleep(5)  # margem para API atualizar
 
     candle_entrada = encontrar_candle(coin_id, entrada_dt, timeout_seg=120)
 
@@ -252,7 +282,7 @@ def fluxo_sinal(chat_id, coin_id, msg_analise_id):
     )
 
     esperar_ate(gale_dt + timedelta(minutes=1))
-    time.sleep(3)
+    time.sleep(5)
 
     candle_gale = encontrar_candle(coin_id, gale_dt, timeout_seg=120)
 
