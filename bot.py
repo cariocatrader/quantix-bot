@@ -39,7 +39,7 @@ BANDERAS = {
 
 def buscar_candles(paridade):
 
-    url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=5&apikey={API_KEY}"
+    url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=10&apikey={API_KEY}"
 
     try:
 
@@ -55,7 +55,7 @@ def buscar_candles(paridade):
         return None
 
 # ==============================
-# ANALISE (CORRIGIDA)
+# ANALISE (mantida igual)
 # ==============================
 
 def analisar(candles):
@@ -63,7 +63,6 @@ def analisar(candles):
     if len(candles) < 4:
         return None
 
-    # usar apenas candles FECHADOS
     ultimos = candles[1:4]
 
     altas = sum(
@@ -82,7 +81,7 @@ def analisar(candles):
     return None
 
 # ==============================
-# PRÓXIMA ENTRADA
+# HORÁRIO ENTRADA
 # ==============================
 
 def proxima_entrada_real():
@@ -112,24 +111,44 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO (CORRIGIDO)
+# RESULTADO SINCRONIZADO
 # ==============================
 
-def resultado_real(paridade, direcao):
+def resultado_real(paridade, direcao, horario_entrada):
+
+    time.sleep(5)  # segurança extra
 
     candles = buscar_candles(paridade)
 
     if not candles:
         return "LOSS"
 
-    if len(candles) < 2:
+    horario_str = horario_entrada.strftime("%Y-%m-%d %H:%M:%S")
+
+    candle_encontrado = None
+
+    for c in candles:
+
+        if c["datetime"] == horario_str:
+
+            candle_encontrado = c
+            break
+
+    if not candle_encontrado:
+
+        print("CANDLE NÃO ENCONTRADO:", horario_str)
+
         return "LOSS"
 
-    # usar candle fechado
-    candle = candles[1]
+    open_price = float(candle_encontrado["open"])
+    close_price = float(candle_encontrado["close"])
 
-    open_price = float(candle["open"])
-    close_price = float(candle["close"])
+    print(
+        "DEBUG:",
+        candle_encontrado["datetime"],
+        open_price,
+        close_price
+    )
 
     if close_price > open_price:
 
@@ -253,10 +272,6 @@ def run(c):
 
     gale = entrada + timedelta(minutes=1)
 
-    # ==============================
-    # SINAL
-    # ==============================
-
     bot.send_message(
         c.message.chat.id,
         f"""
@@ -269,24 +284,17 @@ def run(c):
 """
     )
 
-    # ==============================
-    # ESPERA ENTRADA
-    # ==============================
-
     esperar_ate(entrada)
 
     fechamento = entrada + timedelta(minutes=1)
 
     esperar_ate(fechamento)
 
-    # delay extra para garantir candle fechado
-    time.sleep(3)
-
-    resultado = resultado_real(par, sinal)
-
-    # ==============================
-    # GALE (CORRIGIDO)
-    # ==============================
+    resultado = resultado_real(
+        par,
+        sinal,
+        entrada
+    )
 
     if resultado == "LOSS":
 
@@ -299,9 +307,11 @@ def run(c):
 
         esperar_ate(fechamento_gale)
 
-        time.sleep(3)
-
-        resultado = resultado_real(par, sinal)
+        resultado = resultado_real(
+            par,
+            sinal,
+            gale
+        )
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
 
