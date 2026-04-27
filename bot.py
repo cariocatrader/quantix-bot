@@ -212,4 +212,4 @@ while True:
         bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
     except Exception as e:
         print("Polling caiu:", e)
-        time.sleep(3)True)
+        time.sleep(3)
