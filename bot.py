@@ -207,4 +207,9 @@ def run(c):
 
 print("BOT ONLINE - QUANTIX")
 
-bot.infinity_polling(timeout=15, long_polling_timeout=15, skip_pending=True)
+while True:
+    try:
+        bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+    except Exception as e:
+        print("Polling caiu:", e)
+        time.sleep(3)True)
