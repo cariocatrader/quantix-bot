@@ -55,7 +55,7 @@ def buscar_candles(paridade):
         return None
 
 # ==============================
-# ANALISE (mantida igual)
+# ANALISE
 # ==============================
 
 def analisar(candles):
@@ -111,40 +111,54 @@ def esperar_ate(timestamp):
         time.sleep(0.2)
 
 # ==============================
-# RESULTADO SINCRONIZADO
+# RESULTADO REAL (SEM FALLBACK)
 # ==============================
 
 def resultado_real(paridade, direcao, horario_entrada):
 
-    time.sleep(5)  # segurança extra
+    # aguardar API atualizar
+    time.sleep(5)
 
-    candles = buscar_candles(paridade)
+    # converter para UTC
+    horario_utc = horario_entrada.astimezone(pytz.utc)
 
-    if not candles:
-        return "LOSS"
+    horario_str = horario_utc.strftime("%Y-%m-%d %H:%M:%S")
 
-    horario_str = horario_entrada.strftime("%Y-%m-%d %H:%M:%S")
+    print("PROCURANDO CANDLE:", horario_str)
 
     candle_encontrado = None
 
-    for c in candles:
+    tempo_inicio = time.time()
 
-        if c["datetime"] == horario_str:
+    while True:
 
-            candle_encontrado = c
+        candles = buscar_candles(paridade)
+
+        if candles:
+
+            for c in candles:
+
+                if c["datetime"] == horario_str:
+
+                    candle_encontrado = c
+                    break
+
+        if candle_encontrado:
             break
 
-    if not candle_encontrado:
+        # espera até encontrar candle real
+        if time.time() - tempo_inicio > 60:
 
-        print("CANDLE NÃO ENCONTRADO:", horario_str)
+            print("CANDLE NÃO ENCONTRADO:", horario_str)
+            return "LOSS"
 
-        return "LOSS"
+        time.sleep(2)
 
     open_price = float(candle_encontrado["open"])
     close_price = float(candle_encontrado["close"])
 
     print(
-        "DEBUG:",
+        "CANDLE REAL:",
         candle_encontrado["datetime"],
         open_price,
         close_price
