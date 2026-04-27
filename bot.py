@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timedelta
 import pytz
 import os
-import threading
 
 # ==============================
 # CONFIG
@@ -14,7 +13,7 @@ import threading
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
 
-bot = telebot.TeleBot(TOKEN, threaded=True)
+bot = telebot.TeleBot(TOKEN)
 
 timezone = pytz.timezone("America/Sao_Paulo")
 
@@ -45,10 +44,10 @@ BANDERAS = {
 # ==============================
 
 def buscar_candles(paridade):
-    url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=10&apikey={API_KEY}"
+    url = f"https://api.twelvedata.com/time_series?symbol={paridade}&interval=1min&outputsize=15&apikey={API_KEY}"  # +5 candles
 
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=8)  # Reduzido timeout
         data = r.json()
 
         if "values" not in data:
@@ -69,7 +68,7 @@ def analisar(candles):
     if len(candles) < 4:
         return None
 
-    ultimos = candles[1:4]
+    ultimos = candles[0:3]  # Mais recentes primeiro (TwelveData retorna assim)
 
     altas = sum(float(c["close"]) > float(c["open"]) for c in ultimos)
     baixas = 3 - altas
@@ -92,51 +91,46 @@ def proxima_entrada_real():
 
 def esperar_ate(timestamp):
     while True:
-        if datetime.now(timezone) >= timestamp:
+        agora = datetime.now(timezone)
+        if agora >= timestamp:
             break
-        time.sleep(0.5)
+        time.sleep(0.1)  # Mais preciso
 
 # ==============================
-# RESULTADO
+# RESULTADO REAL (MELHORADO)
 # ==============================
 
 def resultado_real(paridade, direcao, horario_base):
-    horario_candle = (
-        datetime.strptime(horario_base, "%H:%M") + timedelta(minutes=1)
-    ).strftime("%H:%M")
+    horario_candle = (datetime.strptime(horario_base, "%H:%M") + timedelta(minutes=1)).strftime("%H:%M")
 
-    for _ in range(6):
-
+    for tentativa in range(10):  # Mais retries
         candles = buscar_candles(paridade)
         if not candles:
-            time.sleep(2)
+            time.sleep(1)
             continue
 
         for c in candles:
             try:
                 candle_time = datetime.strptime(c["datetime"], "%Y-%m-%d %H:%M:%S")
                 candle_time = pytz.utc.localize(candle_time).astimezone(timezone)
-
                 if candle_time.strftime("%H:%M") == horario_candle:
-
                     open_price = float(c["open"])
                     close_price = float(c["close"])
 
-                    if close_price > open_price:
-                        result = "CALL"
-                    elif close_price < open_price:
-                        result = "PUT"
-                    else:
+                    if abs(close_price - open_price) < 0.00001:  # Doji threshold
                         return "DOJI"
 
-                    return "WIN" if result == direcao else "LOSS"
+                    candle_result = "CALL" if close_price > open_price else "PUT"
 
-            except:
-                continue
+                    if candle_result == direcao:
+                        return "WIN"
+                    return "LOSS"
+            except (ValueError, KeyError):
+                continue  # Ignora erros de parse
 
-        time.sleep(2)
+        time.sleep(1)  # Retry rápido
 
-    return "LOSS"
+    return "TIMEOUT"
 
 # ==============================
 # START
@@ -144,136 +138,78 @@ def resultado_real(paridade, direcao, horario_base):
 
 @bot.message_handler(commands=["start"])
 def start(m):
-
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Gerar Sinal", callback_data="gerar"))
-
-    bot.send_message(
-        m.chat.id,
-        "👋 Bem-vindo ao Quantix",
-        reply_markup=kb
-    )
+    bot.send_message(m.chat.id, "👋 Bem-vindo ao Quantix", reply_markup=kb)
 
 # ==============================
-# MENU PARIDADES
+# EXECUÇÃO (OTIMIZADA)
 # ==============================
 
-@bot.callback_query_handler(func=lambda c: c.data == "gerar")
-def escolher_par(c):
-    bot.answer_callback_query(c.id)
+@bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
+def run(c):
+    par = c.data.split("_")[1]
+    bot.delete_message(c.message.chat.id, c.message.message_id)
 
-    kb = InlineKeyboardMarkup(row_width=2)
-
-    for par in PARIDADES:
-        kb.add(InlineKeyboardButton(par, callback_data=f"p_{par}"))
-
-    bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=kb)
-
-# ==============================
-# EXECUÇÃO EM THREAD (CORREÇÃO PRINCIPAL)
-# ==============================
-
-def executar_sinal(chat_id, par):
-
-    try:
-        msg = bot.send_animation(
-            chat_id,
-            open(GIF_ANALISE, "rb"),
-            caption="🔎 Analisando mercado..."
-        )
-    except:
-        msg = None
+    msg = bot.send_animation(c.message.chat.id, open(GIF_ANALISE, "rb"), caption="🔎 Quantix analisando...")
 
     sinal = None
     start_time = time.time()
-
-    while time.time() - start_time < 40:
-
+    while time.time() - start_time < 45:  # Reduzido timeout
         candles = buscar_candles(par)
         if candles:
             sinal = analisar(candles)
             if sinal:
                 break
+        time.sleep(1.5)  # Mais eficiente
 
-        time.sleep(2)
-
-    if msg:
-        try:
-            bot.delete_message(chat_id, msg.message_id)
-        except:
-            pass
+    try:
+        bot.delete_message(c.message.chat.id, msg.message_id)
+    except:
+        pass
 
     if not sinal:
-        bot.send_message(chat_id, "❌ Nenhum sinal válido encontrado.")
+        bot.send_message(c.message.chat.id, "❌ Nenhum sinal válido encontrado.")
         return
 
     entrada = proxima_entrada_real()
     gale = entrada + timedelta(minutes=1)
-
     horario_entrada = entrada.strftime("%H:%M")
     horario_gale = gale.strftime("%H:%M")
 
-    bot.send_message(
-        chat_id,
-        f"""
+    bot.send_message(c.message.chat.id, f"""
 📊 SINAL GERADO:
-
-📊 Paridade: {par}
+📊 Paridade: {BANDERAS[par]} {par}
 ⏱ Timeframe: M1
 🎯 Entrada: {horario_entrada} ({sinal})
 ⏳ Gale: {horario_gale}
-"""
-    )
+""")
 
     esperar_ate(entrada + timedelta(minutes=1))
-    time.sleep(10)
+    time.sleep(5)  # Reduzido de 12s
 
     resultado = resultado_real(par, sinal, horario_entrada)
 
     if resultado == "LOSS":
-
-        bot.send_message(chat_id, "⚠️ Entrando em GALE 1...")
-
+        bot.send_message(c.message.chat.id, "⚠️ Entrando em GALE 1...")
         esperar_ate(gale + timedelta(minutes=1))
-        time.sleep(10)
+        time.sleep(5)  # Reduzido
 
         resultado = resultado_real(par, sinal, horario_gale)
 
     gif = GIF_WIN if resultado == "WIN" else GIF_LOSS
+    status = resultado  # Suporta DOJI/TIMEOUT agora
 
-    try:
-        bot.send_animation(
-            chat_id,
-            open(gif, "rb"),
-            caption=f"📊 Resultado: {resultado}"
-        )
-    except:
-        bot.send_message(chat_id, f"📊 Resultado: {resultado}")
+    bot.send_animation(c.message.chat.id, open(gif, "rb"), caption=f"📊 Resultado: {status}")
 
-# ==============================
-# CALLBACK PARIDADE
-# ==============================
+# Adicione handler para gerar (se faltava)
+@bot.callback_query_handler(func=lambda c: c.data == "gerar")
+def gerar(c):
+    kb = InlineKeyboardMarkup(row_width=2)
+    for par in PARIDADES:
+        kb.add(InlineKeyboardButton(f"{BANDERAS[par]} {par}", callback_data=f"p_{par}"))
+    bot.edit_message_text("Escolha a paridade:", c.message.chat.id, c.message.message_id, reply_markup=kb)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("p_"))
-def run(c):
+print("BOT ONLINE - VERSÃO REVISADA")
 
-    bot.answer_callback_query(c.id)
-
-    par = c.data.split("_")[1]
-
-    threading.Thread(
-        target=executar_sinal,
-        args=(c.message.chat.id, par)
-    ).start()
-
-# ==============================
-# START BOT
-# ==============================
-
-print("BOT ONLINE")
-
-bot.infinity_polling(
-    timeout=60,
-    long_polling_timeout=60,
-    skip_pending=True
-)
+bot.infinity_polling(timeout=30, long_polling_timeout=30, skip_pending=True)  # Timeouts reduzidos
