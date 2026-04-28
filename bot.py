@@ -22,67 +22,53 @@ def get_br_time(format_str="%H:%M"):
     return datetime.now(BR_TZ).strftime(format_str)
 
 
-# ✅ CORREÇÃO REAL AQUI
+# ✅ DATA DINÂMICA CORRETA
 def br_to_utc_timestamp(br_time_str):
-    """Converte HH:MM BR para timestamp UTC usando DATA REAL"""
 
-    try:
+    now_br = datetime.now(BR_TZ)
 
-        now_br = datetime.now(BR_TZ)
-
-        br_dt = datetime.strptime(
-            br_time_str,
-            "%H:%M"
-        )
-
-        br_dt = BR_TZ.localize(
-            br_dt.replace(
-                year=now_br.year,
-                month=now_br.month,
-                day=now_br.day
-            )
-        )
-
-        utc_dt = br_dt.astimezone(UTC_TZ)
-
-        return int(
-            utc_dt.timestamp() * 1000
-        )
-
-    except Exception as e:
-
-        print("Erro timestamp:", e)
-
-        now_utc = datetime.utcnow()
-
-        return int(
-            now_utc.timestamp() * 1000
-        )
-
-
-def next_round_time(now_str, exp):
-
-    now = datetime.strptime(
-        now_str,
-        "%H:%M"
+    hour, minute = map(
+        int,
+        br_time_str.split(":")
     )
 
-    now = BR_TZ.localize(now)
+    br_dt = BR_TZ.localize(
+        datetime(
+            year=now_br.year,
+            month=now_br.month,
+            day=now_br.day,
+            hour=hour,
+            minute=minute
+        )
+    )
+
+    utc_dt = br_dt.astimezone(UTC_TZ)
+
+    return int(
+        utc_dt.timestamp() * 1000
+    )
+
+
+# ✅ CORREÇÃO DE LOCALIZE
+def next_round_time(now_str, exp):
+
+    now_real = datetime.now(BR_TZ)
+
+    hour, minute = map(
+        int,
+        now_str.split(":")
+    )
+
+    now = now_real.replace(
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0
+    )
 
     if exp == "1":
 
-        entry_min = now.minute + 1
-
-        if entry_min >= 60:
-
-            entry_min = 0
-            now += timedelta(hours=1)
-
-        entry = now.replace(
-            minute=entry_min,
-            second=0,
-            microsecond=0
-        )
+        entry = now + timedelta(minutes=1)
 
         gale1 = entry + timedelta(minutes=1)
 
