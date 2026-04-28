@@ -41,39 +41,62 @@ WIN_GIF = "win.gif"
 LOSS_GIF = "loss.gif"
 
 # =========================
-# CANDLE BINANCE
+# BINANCE SAFE REQUEST
 # =========================
 
 def get_candle(symbol):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=2"
-    data = requests.get(url).json()
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=2"
+        r = requests.get(url, timeout=5)
+        data = r.json()
 
-    candle = data[-2]
-    return float(candle[1]), float(candle[4])
+        candle = data[-2]
+
+        open_price = float(candle[1])
+        close_price = float(candle[4])
+
+        return open_price, close_price
+
+    except Exception as e:
+        print("Erro candle:", e)
+        return None
 
 # =========================
 # DIREÇÃO
 # =========================
 
 def analyze(symbol):
-    o, c = get_candle(symbol)
+    candle = get_candle(symbol)
+
+    if not candle:
+        return None
+
+    o, c = candle
+
     if c > o:
         return "COMPRA"
     elif c < o:
         return "VENDA"
+
     return None
 
 # =========================
-# RESULTADO
+# RESULTADO REAL
 # =========================
 
 def result(symbol, direction):
-    o, c = get_candle(symbol)
+    candle = get_candle(symbol)
 
-    if direction == "COMPRA" and c > o:
-        return "WIN"
-    if direction == "VENDA" and c < o:
-        return "WIN"
+    if not candle:
+        return "LOSS"
+
+    o, c = candle
+
+    if direction == "COMPRA":
+        return "WIN" if c > o else "LOSS"
+
+    if direction == "VENDA":
+        return "WIN" if c < o else "LOSS"
 
     return "LOSS"
 
@@ -92,7 +115,7 @@ def restart_btn():
     return kb
 
 # =========================
-# MENU PARIDADES
+# MENUS
 # =========================
 
 def menu_paridades():
@@ -108,9 +131,6 @@ def menu_paridades():
 
     return kb
 
-# =========================
-# MENU EXPIRAÇÃO
-# =========================
 
 def menu_exp(symbol):
     kb = telebot.types.InlineKeyboardMarkup()
@@ -127,7 +147,7 @@ def menu_exp(symbol):
 def run_signal(chat_id, symbol, exp):
 
     # =========================
-    # ANÁLISE (NOVO BLOCO)
+    # ANÁLISE (NÃO BLOQUEIA)
     # =========================
 
     bot.send_animation(
@@ -136,81 +156,85 @@ def run_signal(chat_id, symbol, exp):
         caption="⏳ Aguarde enquanto o Quantix Cripto analisa a melhor entrada..."
     )
 
-    time.sleep(2)
+    def process():
 
-    direction = analyze(symbol)
+        time.sleep(2)
 
-    if not direction:
-        bot.send_message(chat_id, "❌ Sem sinal no momento")
-        return
+        direction = analyze(symbol)
 
-    entry_time = datetime.now().strftime("%H:%M:%S")
+        if not direction:
+            bot.send_message(chat_id, "❌ Sem sinal no momento")
+            return
 
-    bot.send_message(
-        chat_id,
-        f"""🚀 SINAL GERADO
+        entry_time = datetime.now().strftime("%H:%M:%S")
+
+        bot.send_message(
+            chat_id,
+            f"""🚀 SINAL GERADO
 ━━━━━━━━━━━━━━
 💱 {SYMBOLS[symbol]}
 ⏱ Entrada: {entry_time}
 🎯 Direção: {direction}
 ⏳ Expiração: {exp} min"""
-    )
+        )
 
-    # =========================
-    # ESPERA EXPIRAÇÃO
-    # =========================
+        # =========================
+        # ESPERA EXPIRAÇÃO
+        # =========================
 
-    time.sleep(int(exp) * 60)
+        time.sleep(int(exp) * 60)
 
-    r1 = result(symbol, direction)
+        r1 = result(symbol, direction)
 
-    # =========================
-    # WIN DIRETO
-    # =========================
+        # =========================
+        # WIN DIRETO
+        # =========================
 
-    if r1 == "WIN":
+        if r1 == "WIN":
 
-        time.sleep(3)
+            time.sleep(3)
 
-        bot.send_animation(
-            chat_id,
-            open(WIN_GIF, "rb"),
-            caption=f"""🏁 RESULTADO FINAL
+            bot.send_animation(
+                chat_id,
+                open(WIN_GIF, "rb"),
+                caption=f"""🏁 RESULTADO FINAL
 ━━━━━━━━━━━━━━
 💱 {SYMBOLS[symbol]}
 📊 WIN
 ⏱ Entrada: {entry_time}
 🎯 Direção: {direction}""",
-            reply_markup=restart_btn()
-        )
-        return
+                reply_markup=restart_btn()
+            )
+            return
 
-    # =========================
-    # GALE 1
-    # =========================
+        # =========================
+        # GALE 1
+        # =========================
 
-    bot.send_message(chat_id, "⚠️ Entrando em Gale 1...")
+        bot.send_message(chat_id, "⚠️ Entrando em Gale 1...")
 
-    time.sleep(int(exp) * 60)
+        time.sleep(int(exp) * 60)
 
-    r2 = result(symbol, direction)
+        r2 = result(symbol, direction)
 
-    gif = WIN_GIF if r2 == "WIN" else LOSS_GIF
+        gif = WIN_GIF if r2 == "WIN" else LOSS_GIF
 
-    time.sleep(3)
+        time.sleep(3)
 
-    bot.send_animation(
-        chat_id,
-        open(gif, "rb"),
-        caption=f"""🏁 RESULTADO FINAL
+        bot.send_animation(
+            chat_id,
+            open(gif, "rb"),
+            caption=f"""🏁 RESULTADO FINAL
 ━━━━━━━━━━━━━━
 💱 {SYMBOLS[symbol]}
 📊 {r2}
 ⏱ Entrada: {entry_time}
 🎯 Direção: {direction}
 🔁 Gale 1""",
-        reply_markup=restart_btn()
-    )
+            reply_markup=restart_btn()
+        )
+
+    threading.Thread(target=process, daemon=True).start()
 
 # =========================
 # START
@@ -220,11 +244,13 @@ def run_signal(chat_id, symbol, exp):
 def start(m):
 
     kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="start"))
+    kb.add(
+        telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="start")
+    )
 
     bot.send_message(
         m.chat.id,
-        "👋 Bem-vindo ao Quantix Cripto\nClique para iniciar",
+        "👋 Bem-vindo ao Quantix Cripto\nClique abaixo para começar",
         reply_markup=kb
     )
 
@@ -263,14 +289,10 @@ def exp(c):
 
     _, symbol, exp = c.data.split("_")
 
-    threading.Thread(
-        target=run_signal,
-        args=(c.message.chat.id, symbol, exp),
-        daemon=True
-    ).start()
+    run_signal(c.message.chat.id, symbol, exp)
 
 # =========================
-# RESTART FLUXO
+# RESTART
 # =========================
 
 @bot.callback_query_handler(func=lambda c: c.data == "restart")
