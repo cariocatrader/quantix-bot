@@ -163,7 +163,7 @@ def run_signal(chat_id, coin_id, exp):
         try:
             bot.send_animation(chat_id, open(ANALISE_GIF, "rb"), caption="⏳ Calculando horários...")
         except:
-            bot.send_message(chat_id, "⏳ Aguarde enquanto o Quantix está Analisando o mercado...")
+            bot.send_message(chat_id, "⏳ Analisando...")
 
         direction = analyze(coin_id)
 
@@ -176,7 +176,7 @@ def run_signal(chat_id, coin_id, exp):
 
         bot.send_message(
             chat_id,
-            f"""🚀 SINAL GERADO:
+            f"""🚀 SINAL GERADO
 ━━━━━━━━━━━━━━
 💱 {SYMBOLS[coin_id]}
 ⏱ Entrada: {entry_time}
@@ -246,7 +246,7 @@ def start(m):
 
     bot.send_message(
         m.chat.id,
-        f"""👋 Seja bem vindo ao Quantix Cripto
+        f"""👋 Quantix Cripto
 🇧🇷 {get_br_time()}""",
         reply_markup=kb
     )
@@ -254,13 +254,13 @@ def start(m):
 @bot.callback_query_handler(func=lambda c: c.data == "start")
 def start_flow(c):
     bot.answer_callback_query(c.id)
-    bot.send_message(c.message.chat.id, "📊 Escolha a paridadeParidade:", reply_markup=menu_paridades())
+    bot.send_message(c.message.chat.id, "📊 Paridade:", reply_markup=menu_paridades())
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("par_"))
 def paridade(c):
     bot.answer_callback_query(c.id)
     coin_id = c.data.split("_", 1)[1]
-    bot.send_message(c.message.chat.id, "⏳ Tempo de Expiração:", reply_markup=menu_exp(coin_id))
+    bot.send_message(c.message.chat.id, "⏳ Expiração:", reply_markup=menu_exp(coin_id))
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("exp_"))
 def exp_handler(c):
