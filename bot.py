@@ -22,24 +22,42 @@ def get_br_time(format_str="%H:%M"):
     return datetime.now(BR_TZ).strftime(format_str)
 
 
+# ✅ CORREÇÃO REAL AQUI
 def br_to_utc_timestamp(br_time_str):
-    """Converte HH:MM BR para timestamp UTC exato"""
+    """Converte HH:MM BR para timestamp UTC usando DATA REAL"""
 
-    br_dt = datetime.strptime(br_time_str, "%H:%M")
+    try:
 
-    br_dt = BR_TZ.localize(
-        br_dt.replace(
-            year=2026,
-            month=4,
-            day=28
+        now_br = datetime.now(BR_TZ)
+
+        br_dt = datetime.strptime(
+            br_time_str,
+            "%H:%M"
         )
-    )
 
-    utc_dt = br_dt.astimezone(UTC_TZ)
+        br_dt = BR_TZ.localize(
+            br_dt.replace(
+                year=now_br.year,
+                month=now_br.month,
+                day=now_br.day
+            )
+        )
 
-    return int(
-        utc_dt.timestamp() * 1000
-    )
+        utc_dt = br_dt.astimezone(UTC_TZ)
+
+        return int(
+            utc_dt.timestamp() * 1000
+        )
+
+    except Exception as e:
+
+        print("Erro timestamp:", e)
+
+        now_utc = datetime.utcnow()
+
+        return int(
+            now_utc.timestamp() * 1000
+        )
 
 
 def next_round_time(now_str, exp):
@@ -96,30 +114,32 @@ def next_round_time(now_str, exp):
 
 
 SYMBOLS = {
-    "bitcoin": "₿ Bitcoin",
-    "ethereum": "Ξ Ethereum",
-    "binancecoin": "🟡 BNB",
-    "solana": "🟣 Solana",
-    "ripple": "💧 XRP",
-    "cardano": "🔵 Cardano",
-    "dogecoin": "🐶 Doge",
-    "litecoin": "🪙 Litecoin",
-    "polkadot": "⚫ Polkadot",
-    "avalanche-2": "🔺 Avalanche"
+"bitcoin": "₿ Bitcoin",
+"ethereum": "Ξ Ethereum",
+"binancecoin": "🟡 BNB",
+"solana": "🟣 Solana",
+"ripple": "💧 XRP",
+"cardano": "🔵 Cardano",
+"dogecoin": "🐶 Doge",
+"litecoin": "🪙 Litecoin",
+"polkadot": "⚫ Polkadot",
+"avalanche-2": "🔺 Avalanche"
 }
 
+
 BINANCE_SYMBOLS = {
-    "bitcoin": "BTCUSDT",
-    "ethereum": "ETHUSDT",
-    "binancecoin": "BNBUSDT",
-    "solana": "SOLUSDT",
-    "ripple": "XRPUSDT",
-    "cardano": "ADAUSDT",
-    "dogecoin": "DOGEUSDT",
-    "litecoin": "LTCUSDT",
-    "polkadot": "DOTUSDT",
-    "avalanche-2": "AVAXUSDT"
+"bitcoin": "BTCUSDT",
+"ethereum": "ETHUSDT",
+"binancecoin": "BNBUSDT",
+"solana": "SOLUSDT",
+"ripple": "XRPUSDT",
+"cardano": "ADAUSDT",
+"dogecoin": "DOGEUSDT",
+"litecoin": "LTCUSDT",
+"polkadot": "DOTUSDT",
+"avalanche-2": "AVAXUSDT"
 }
+
 
 ANALISE_GIF = "analise.gif"
 WIN_GIF = "win.gif"
@@ -151,6 +171,7 @@ def analyze(coin_id):
         )
 
     except:
+
         return "COMPRA"
 
 
@@ -294,17 +315,14 @@ def run_signal(chat_id, coin_id, exp, message_id=None):
                 except:
                     pass
 
-            try:
-                with open(ANALISE_GIF, "rb") as gif:
+            with open(ANALISE_GIF, "rb") as gif:
 
-                    bot.send_animation(
-                        chat_id,
-                        gif,
-                        caption="🔍 *Aguarde enquanto o Quantix Cripto busca a melhor entrada...*",
-                        parse_mode="Markdown"
-                    )
-            except Exception as e:
-                print("Erro GIF análise:", e)
+                bot.send_animation(
+                    chat_id,
+                    gif,
+                    caption="🔍 *Aguarde enquanto o Quantix Cripto busca a melhor entrada...*",
+                    parse_mode="Markdown"
+                )
 
             direction = analyze(coin_id)
 
@@ -319,22 +337,22 @@ def run_signal(chat_id, coin_id, exp, message_id=None):
 
             exp_min = 1 if exp == "1" else 5
 
-            signal_msg = bot.send_message(
+            bot.send_message(
 
                 chat_id,
 
-                f"""🎉 *SINAL ENCONTRADO!*
+f"""🎉 *SINAL ENCONTRADO!*
 
-💱 `{SYMBOLS[coin_id]}`
-⏱ *Entrada:* `{entry_time}`
-📅 *Gale 1:* `{gale_time}`
-🎯 *Direção:* `{direction}`
-⏳ *Expiração:* `{exp_min} min`
-📊 *Análise:* CoinGecko + Binance
+💱 {SYMBOLS[coin_id]}
+⏱ Entrada: {entry_time}
+📅 Gale 1: {gale_time}
+🎯 Direção: {direction}
+⏳ Expiração: {exp_min} min
+📊 Análise: CoinGecko + Binance
 
-**Quantix Cripto** ✨""",
+Quantix Cripto ✨""",
 
-                parse_mode="Markdown",
+parse_mode="Markdown",
 
                 reply_markup=restart_btn()
 
