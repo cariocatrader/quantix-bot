@@ -658,7 +658,15 @@ def restart(c):
 
 print(f"🚀 QUANTIX TIMESTAMP CORRIGIDO {get_br_time()}")
 
+print("🧹 Removendo webhook antigo...")
+bot.remove_webhook()
+
+time.sleep(2)
+
+print("🚀 Iniciando polling...")
+
 bot.infinity_polling(
     timeout=60,
-    long_polling_timeout=60
+    long_polling_timeout=60,
+    skip_pending=True
 )
