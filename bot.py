@@ -463,24 +463,29 @@ def restart(c):
 
 print(f"🚀 QUANTIX ATIVO {get_br_time()}")
 
-# Remove webhook com segurança
+# Remove webhook sempre
 try:
     bot.remove_webhook()
 except:
     pass
 
-time.sleep(3)
+time.sleep(5)
 
-# Polling protegido contra erro 409
+# Polling protegido
 while True:
     try:
+        print("🤖 Iniciando polling...")
+        
         bot.infinity_polling(
             timeout=60,
             long_polling_timeout=60,
-            skip_pending=True
+            skip_pending=True,
+            none_stop=True
         )
+
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print("🔁 Reiniciando polling em 5 segundos...")
-        time.sleep(5)
+
+        print("⚠️ Erro detectado — reiniciando polling em 10 segundos...")
+        time.sleep(10)
