@@ -463,12 +463,19 @@ def restart(c):
 
 print(f"🚀 QUANTIX ATIVO {get_br_time()}")
 
-bot.remove_webhook()
+# REMOVE WEBHOOK FORÇADO
+try:
+    bot.remove_webhook()
+    time.sleep(3)
+    bot.delete_webhook()
+    time.sleep(3)
+except Exception as e:
+    print("Webhook já removido")
 
-time.sleep(2)
-
+# INICIA POLLING
 bot.infinity_polling(
     timeout=60,
     long_polling_timeout=60,
-    skip_pending=True
+    skip_pending=True,
+    none_stop=True
 )
