@@ -8,7 +8,6 @@ import pytz
 import math
 
 TOKEN = os.getenv("TOKEN")
-
 if not TOKEN:
     raise Exception("TOKEN não encontrado")
 
@@ -17,58 +16,49 @@ bot = telebot.TeleBot(TOKEN)
 BR_TZ = pytz.timezone('America/Sao_Paulo')
 UTC_TZ = pytz.UTC
 
-
 def get_br_time(format_str="%H:%M"):
     return datetime.now(BR_TZ).strftime(format_str)
 
-
-# ✅ DATA DINÂMICA CORRETA
 def br_to_utc_timestamp(br_time_str):
-
+    """Converte HH:MM BR para timestamp UTC usando data atual"""
+    
     now_br = datetime.now(BR_TZ)
 
-    hour, minute = map(
-        int,
-        br_time_str.split(":")
+    br_dt = datetime.strptime(br_time_str, "%H:%M").replace(
+        year=now_br.year,
+        month=now_br.month,
+        day=now_br.day
     )
 
-    br_dt = BR_TZ.localize(
-        datetime(
-            year=now_br.year,
-            month=now_br.month,
-            day=now_br.day,
-            hour=hour,
-            minute=minute
-        )
-    )
-
+    br_dt = BR_TZ.localize(br_dt)
     utc_dt = br_dt.astimezone(UTC_TZ)
 
-    return int(
-        utc_dt.timestamp() * 1000
-    )
+    return int(utc_dt.timestamp() * 1000)
 
-
-# ✅ CORREÇÃO DE LOCALIZE
 def next_round_time(now_str, exp):
+    now_dt = datetime.now(BR_TZ)
 
-    now_real = datetime.now(BR_TZ)
-
-    hour, minute = map(
-        int,
-        now_str.split(":")
+    now = datetime.strptime(now_str, "%H:%M").replace(
+        year=now_dt.year,
+        month=now_dt.month,
+        day=now_dt.day
     )
 
-    now = now_real.replace(
-        hour=hour,
-        minute=minute,
-        second=0,
-        microsecond=0
-    )
+    now = BR_TZ.localize(now)
 
     if exp == "1":
 
-        entry = now + timedelta(minutes=1)
+        entry_min = now.minute + 1
+
+        if entry_min >= 60:
+            entry_min = 0
+            now += timedelta(hours=1)
+
+        entry = now.replace(
+            minute=entry_min,
+            second=0,
+            microsecond=0
+        )
 
         gale1 = entry + timedelta(minutes=1)
 
@@ -81,7 +71,6 @@ def next_round_time(now_str, exp):
         ) * 5
 
         if next_5 >= 60:
-
             next_5 = 0
             now += timedelta(hours=1)
 
@@ -98,39 +87,35 @@ def next_round_time(now_str, exp):
         gale1.strftime("%H:%M")
     )
 
-
 SYMBOLS = {
-"bitcoin": "₿ Bitcoin",
-"ethereum": "Ξ Ethereum",
-"binancecoin": "🟡 BNB",
-"solana": "🟣 Solana",
-"ripple": "💧 XRP",
-"cardano": "🔵 Cardano",
-"dogecoin": "🐶 Doge",
-"litecoin": "🪙 Litecoin",
-"polkadot": "⚫ Polkadot",
-"avalanche-2": "🔺 Avalanche"
+    "bitcoin": "₿ Bitcoin",
+    "ethereum": "Ξ Ethereum",
+    "binancecoin": "🟡 BNB",
+    "solana": "🟣 Solana",
+    "ripple": "💧 XRP",
+    "cardano": "🔵 Cardano",
+    "dogecoin": "🐶 Doge",
+    "litecoin": "🪙 Litecoin",
+    "polkadot": "⚫ Polkadot",
+    "avalanche-2": "🔺 Avalanche"
 }
-
 
 BINANCE_SYMBOLS = {
-"bitcoin": "BTCUSDT",
-"ethereum": "ETHUSDT",
-"binancecoin": "BNBUSDT",
-"solana": "SOLUSDT",
-"ripple": "XRPUSDT",
-"cardano": "ADAUSDT",
-"dogecoin": "DOGEUSDT",
-"litecoin": "LTCUSDT",
-"polkadot": "DOTUSDT",
-"avalanche-2": "AVAXUSDT"
+    "bitcoin": "BTCUSDT",
+    "ethereum": "ETHUSDT",
+    "binancecoin": "BNBUSDT",
+    "solana": "SOLUSDT",
+    "ripple": "XRPUSDT",
+    "cardano": "ADAUSDT",
+    "dogecoin": "DOGEUSDT",
+    "litecoin": "LTCUSDT",
+    "polkadot": "DOTUSDT",
+    "avalanche-2": "AVAXUSDT"
 }
-
 
 ANALISE_GIF = "analise.gif"
 WIN_GIF = "win.gif"
 LOSS_GIF = "loss.gif"
-
 
 def analyze(coin_id):
 
@@ -138,10 +123,7 @@ def analyze(coin_id):
 
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc?vs_currency=usd&days=2"
 
-        r = requests.get(
-            url,
-            timeout=8
-        )
+        r = requests.get(url, timeout=8)
 
         data = r.json()
 
@@ -160,14 +142,11 @@ def analyze(coin_id):
 
         return "COMPRA"
 
-
 def get_binance_candle(symbol, br_time_str):
 
     try:
 
-        target_utc_ms = br_to_utc_timestamp(
-            br_time_str
-        )
+        target_utc_ms = br_to_utc_timestamp(br_time_str)
 
         print(
             f"🔍 Buscando {symbol} {br_time_str} BR = {target_utc_ms}"
@@ -175,43 +154,34 @@ def get_binance_candle(symbol, br_time_str):
 
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
 
-        r = requests.get(
-            url,
-            timeout=5
-        )
+        r = requests.get(url, timeout=5)
 
         data = r.json()
 
         for candle in data:
 
             open_ts = int(candle[0])
-            close_ts = int(candle[6])
 
-            if (
-                abs(open_ts - target_utc_ms) < 120000
-                or
-                abs(close_ts - target_utc_ms) < 120000
-            ):
+            if abs(open_ts - target_utc_ms) < 120000:
 
                 o = float(candle[1])
                 c = float(candle[4])
 
                 print(
-                    f"✅ Candle encontrado {o}→{c}"
+                    f"✅ Candle encontrado {o} → {c}"
                 )
 
                 return o, c
 
-        print("❌ Nenhum candle")
+        print("❌ Nenhum candle encontrado")
 
         return None, None
 
     except Exception as e:
 
-        print("Erro candle:", e)
+        print(f"Erro candle: {e}")
 
         return None, None
-
 
 def get_result(symbol, direction, br_time_str):
 
@@ -224,27 +194,35 @@ def get_result(symbol, direction, br_time_str):
         return "LOSS"
 
     win = (
+
         (direction == "COMPRA" and c > o)
+
         or
+
         (direction == "VENDA" and c < o)
+
+    )
+
+    print(
+        f"📊 RESULT {br_time_str}: {o} → {c}"
     )
 
     return "WIN" if win else "LOSS"
-
 
 def restart_btn():
 
     kb = telebot.types.InlineKeyboardMarkup()
 
     kb.add(
+
         telebot.types.InlineKeyboardButton(
             "🚀 Novo Sinal",
             callback_data="restart"
         )
+
     )
 
     return kb
-
 
 def menu_paridades():
 
@@ -255,14 +233,15 @@ def menu_paridades():
     for coin_id, name in SYMBOLS.items():
 
         kb.add(
+
             telebot.types.InlineKeyboardButton(
                 name,
                 callback_data=f"par_{coin_id}"
             )
+
         )
 
     return kb
-
 
 def menu_exp(coin_id):
 
@@ -284,7 +263,6 @@ def menu_exp(coin_id):
 
     return kb
 
-
 def run_signal(chat_id, coin_id, exp, message_id=None):
 
     def process():
@@ -293,22 +271,20 @@ def run_signal(chat_id, coin_id, exp, message_id=None):
 
             if message_id:
 
-                try:
-                    bot.delete_message(
-                        chat_id,
-                        message_id
-                    )
-                except:
-                    pass
-
-            with open(ANALISE_GIF, "rb") as gif:
-
-                bot.send_animation(
+                bot.delete_message(
                     chat_id,
-                    gif,
-                    caption="🔍 *Aguarde enquanto o Quantix Cripto busca a melhor entrada...*",
-                    parse_mode="Markdown"
+                    message_id
                 )
+
+            bot.send_animation(
+
+                chat_id,
+
+                open(ANALISE_GIF, "rb"),
+
+                caption="🔍 *Aguarde enquanto o Quantix Cripto busca a melhor entrada...*"
+
+            )
 
             direction = analyze(coin_id)
 
@@ -323,30 +299,213 @@ def run_signal(chat_id, coin_id, exp, message_id=None):
 
             exp_min = 1 if exp == "1" else 5
 
-            bot.send_message(
+            signal_msg = bot.send_message(
 
                 chat_id,
 
 f"""🎉 *SINAL ENCONTRADO!*
 
-💱 {SYMBOLS[coin_id]}
-⏱ Entrada: {entry_time}
-📅 Gale 1: {gale_time}
-🎯 Direção: {direction}
-⏳ Expiração: {exp_min} min
-📊 Análise: CoinGecko + Binance
+**━━━━━━━━━━━━━━━━━━**
+💱 `{SYMBOLS[coin_id]}`
+⏱ *Entrada:* `{entry_time}`
+📅 *Gale 1:* `{gale_time}`
+🎯 *Direção:* `{direction}`
+⏳ *Expiração:* `{exp_min} min`
+📊 *Análise:* CoinGecko + Binance Real
 
-Quantix Cripto ✨""",
+**Quantix Cripto - Precisão máxima** ✨""",
 
-parse_mode="Markdown",
+                parse_mode="Markdown",
 
                 reply_markup=restart_btn()
 
             )
 
+            now_dt = datetime.now(BR_TZ)
+
+            entry_dt = datetime.strptime(
+                entry_time,
+                "%H:%M"
+            ).replace(
+
+                year=now_dt.year,
+                month=now_dt.month,
+                day=now_dt.day
+
+            )
+
+            entry_dt = BR_TZ.localize(entry_dt)
+
+            wait_entry = max(
+
+                1,
+
+                int(
+                    (entry_dt - now_dt).total_seconds()
+                )
+
+                + (exp_min * 60)
+
+            )
+
+            time.sleep(wait_entry)
+
+            r1 = get_result(
+                symbol,
+                direction,
+                entry_time
+            )
+
+            if r1 == "WIN":
+
+                bot.delete_message(
+                    chat_id,
+                    signal_msg.message_id
+                )
+
+                time.sleep(3)
+
+                bot.send_animation(
+
+                    chat_id,
+
+                    open(WIN_GIF, "rb"),
+
+caption=f"""🎊 *WIN DIRETO!*
+
+**━━━━━━━━━━━━━━━━━━**
+💱 `{SYMBOLS[coin_id]}`
+✅ *{r1}*
+⏱ `{entry_time}`
+🎯 `{direction}`
+
+**Parabéns! Operação perfeita** 🏆""",
+
+                    parse_mode="Markdown",
+
+                    reply_markup=restart_btn()
+
+                )
+
+                return
+
+            bot.delete_message(
+                chat_id,
+                signal_msg.message_id
+            )
+
+            bot.send_message(
+
+                chat_id,
+
+"""😔 *Entrada Principal LOSS*
+
+Infelizmente a entrada principal deu LOSS. 
+
+⚠️ *Entrando em Gale 1 agora...*
+
+Mantenha a calma, recuperação em andamento! 💪"""
+
+            )
+
+            now_after_entry = datetime.now(BR_TZ)
+
+            gale_dt = datetime.strptime(
+                gale_time,
+                "%H:%M"
+            ).replace(
+
+                year=now_after_entry.year,
+                month=now_after_entry.month,
+                day=now_after_entry.day
+
+            )
+
+            gale_dt = BR_TZ.localize(gale_dt)
+
+            wait_gale = max(
+
+                1,
+
+                int(
+                    (gale_dt - now_after_entry).total_seconds()
+                )
+
+                + (exp_min * 60)
+
+            )
+
+            time.sleep(wait_gale)
+
+            r2 = get_result(
+                symbol,
+                direction,
+                gale_time
+            )
+
+            time.sleep(3)
+
+            if r2 == "WIN":
+
+                bot.send_animation(
+
+                    chat_id,
+
+                    open(WIN_GIF, "rb"),
+
+caption=f"""🎉 *GALE 1 - VITÓRIA!*
+
+**━━━━━━━━━━━━━━━━━━**
+💱 `{SYMBOLS[coin_id]}`
+✅ *{r2}*
+⏱ `{entry_time}` → `{gale_time}`
+🎯 `{direction}`
+
+**Recuperação completa!** 🔥""",
+
+                    parse_mode="Markdown",
+
+                    reply_markup=restart_btn()
+
+                )
+
+            else:
+
+                bot.send_animation(
+
+                    chat_id,
+
+                    open(LOSS_GIF, "rb"),
+
+caption=f"""💔 *GALE 1 - LOSS FINAL*
+
+**━━━━━━━━━━━━━━━━━━**
+💱 `{SYMBOLS[coin_id]}`
+❌ *{r2}*
+⏱ `{entry_time}` → `{gale_time}`
+🎯 `{direction}`
+
+**Nova oportunidade aguarda...** 📈""",
+
+                    parse_mode="Markdown",
+
+                    reply_markup=restart_btn()
+
+                )
+
         except Exception as e:
 
-            print("Erro:", e)
+            print(f"Erro: {e}")
+
+            if message_id:
+
+                try:
+                    bot.delete_message(
+                        chat_id,
+                        message_id
+                    )
+                except:
+                    pass
 
             bot.send_message(
 
@@ -363,7 +522,143 @@ parse_mode="Markdown",
         daemon=True
     ).start()
 
+@bot.message_handler(commands=["start"])
+def start(m):
+
+    kb = telebot.types.InlineKeyboardMarkup()
+
+    kb.add(
+
+        telebot.types.InlineKeyboardButton(
+            "🚀 Iniciar Quantix",
+            callback_data="start"
+        )
+
+    )
+
+    bot.send_message(
+
+        m.chat.id,
+
+f"""🤖 *Bem-vindo ao Quantix Cripto!*
+
+*IA de trading 24/7 com análise CoinGecko + candles Binance reais*
+
+🇧🇷 {get_br_time()} - Clique abaixo""",
+
+        parse_mode="Markdown",
+
+        reply_markup=kb
+
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data == "start")
+def start_flow(c):
+
+    bot.answer_callback_query(c.id)
+
+    try:
+        bot.delete_message(
+            c.message.chat.id,
+            c.message.message_id
+        )
+    except:
+        pass
+
+    bot.send_message(
+
+        c.message.chat.id,
+
+        "*Escolha a paridade:*",
+
+        parse_mode="Markdown",
+
+        reply_markup=menu_paridades()
+
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("par_"))
+def paridade(c):
+
+    bot.answer_callback_query(c.id)
+
+    try:
+        bot.delete_message(
+            c.message.chat.id,
+            c.message.message_id
+        )
+    except:
+        pass
+
+    coin_id = c.data.split("_", 1)[1]
+
+    bot.send_message(
+
+        c.message.chat.id,
+
+        "*Selecione expiração:*",
+
+        parse_mode="Markdown",
+
+        reply_markup=menu_exp(coin_id)
+
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("exp_"))
+def exp_handler(c):
+
+    bot.answer_callback_query(c.id)
+
+    try:
+        bot.delete_message(
+            c.message.chat.id,
+            c.message.message_id
+        )
+    except:
+        pass
+
+    parts = c.data.split("_")
+
+    run_signal(
+
+        c.message.chat.id,
+
+        parts[1],
+
+        parts[2],
+
+        c.message.message_id
+
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data == "restart")
+def restart(c):
+
+    bot.answer_callback_query(c.id)
+
+    try:
+        bot.delete_message(
+            c.message.chat.id,
+            c.message.message_id
+        )
+    except:
+        pass
+
+    bot.send_message(
+
+        c.message.chat.id,
+
+        "*Escolha a paridade:*",
+
+        parse_mode="Markdown",
+
+        reply_markup=menu_paridades()
+
+    )
 
 print(f"🚀 QUANTIX TIMESTAMP CORRIGIDO {get_br_time()}")
 
-bot.infinity_polling()
+bot.infinity_polling(
+    timeout=60,
+    long_polling_timeout=60
+)
