@@ -3,7 +3,9 @@ import requests
 import threading
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
+import math
 
 # =========================
 # TOKEN
@@ -16,20 +18,46 @@ if not TOKEN:
 bot = telebot.TeleBot(TOKEN)
 
 # =========================
+# TIMEZONE BR
+# =========================
+
+BR_TZ = pytz.timezone('America/Sao_Paulo')
+
+def get_br_time(format_str="%H:%M"):
+    return datetime.now(BR_TZ).strftime(format_str)
+
+def next_round_5(now_str):
+    """Próximo múltiplo de 5 minutos"""
+    now = datetime.strptime(now_str, "%H:%M")
+    now = BR_TZ.localize(now)
+
+    minutes = now.minute
+    next_5 = math.ceil((minutes + 1) / 5.0) * 5
+
+    if next_5 >= 60:
+        next_5 = 0
+        now = now + timedelta(hours=1)
+
+    entry = now.replace(minute=next_5, second=0, microsecond=0)
+    gale1 = entry + timedelta(minutes=5)
+
+    return entry.strftime("%H:%M"), gale1.strftime("%H:%M")
+
+# =========================
 # CRIPTOS
 # =========================
 
 SYMBOLS = {
-    "BTCUSDT": "₿ Bitcoin",
-    "ETHUSDT": "Ξ Ethereum",
-    "BNBUSDT": "🟡 BNB",
-    "SOLUSDT": "🟣 Solana",
-    "XRPUSDT": "💧 XRP",
-    "ADAUSDT": "🔵 Cardano",
-    "DOGEUSDT": "🐶 Doge",
-    "LTCUSDT": "🪙 Litecoin",
-    "DOTUSDT": "⚫ Polkadot",
-    "AVAXUSDT": "🔺 Avalanche"
+    "bitcoin": "₿ Bitcoin",
+    "ethereum": "Ξ Ethereum",
+    "binancecoin": "🟡 BNB",
+    "solana": "🟣 Solana",
+    "ripple": "💧 XRP",
+    "cardano": "🔵 Cardano",
+    "dogecoin": "🐶 Doge",
+    "litecoin": "🪙 Litecoin",
+    "polkadot": "⚫ Polkadot",
+    "avalanche-2": "🔺 Avalanche"
 }
 
 # =========================
@@ -41,74 +69,63 @@ WIN_GIF = "win.gif"
 LOSS_GIF = "loss.gif"
 
 # =========================
-# API MEXC / BINANCE FALLBACK
+# COINGECKO
 # =========================
 
-def get_candle(symbol, limit=5):
+def get_ohlc(coin_id):
     try:
-        url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc?vs_currency=usd&days=2"
         r = requests.get(url, timeout=10)
+        r.raise_for_status()
         data = r.json()
 
-        if not data or len(data) < 3:
-            raise Exception("MEXC vazio")
-
-        return data
-
-    except:
-        try:
-            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
-            r = requests.get(url, timeout=5)
-            return r.json()
-        except:
+        if not data or len(data) < 2:
             return None
 
-# =========================
-# ANALISE
-# =========================
+        prev = data[-2]
+        return float(prev[1]), float(prev[2]), float(prev[3]), float(prev[4])
 
-def analyze(symbol):
-    data = get_candle(symbol, limit=10)
-
-    if not data or len(data) < 4:
+    except:
         return None
 
-    for i in range(-4, -1):
-        try:
-            o = float(data[i][1])
-            c = float(data[i][4])
+# =========================
+# ANALYSE
+# =========================
 
-            pct = abs((c - o) / o * 100)
+def analyze(coin_id):
+    candle = get_ohlc(coin_id)
+    if not candle:
+        return None
 
-            if pct >= 0.01:
-                return "COMPRA" if c > o else "VENDA"
+    o, h, l, c = candle
 
-        except:
-            continue
+    pct_change = abs((c - o) / o * 100)
+    if pct_change < 0.005:
+        return None
 
-    return None
+    body_size = abs(c - o)
+    range_size = h - l
+
+    if range_size == 0 or body_size / range_size < 0.2:
+        return None
+
+    return "COMPRA" if c > o else "VENDA"
 
 # =========================
 # RESULTADO
 # =========================
 
-def result(symbol, direction):
-    data = get_candle(symbol, limit=3)
-
-    if not data:
+def result(coin_id, direction):
+    candle = get_ohlc(coin_id)
+    if not candle:
         return "LOSS"
 
-    try:
-        o = float(data[-2][1])
-        c = float(data[-2][4])
+    o, _, _, c = candle
 
-        if direction == "COMPRA":
-            return "WIN" if c >= o else "LOSS"
+    if direction == "COMPRA":
+        return "WIN" if c > o else "LOSS"
 
-        return "WIN" if c <= o else "LOSS"
-
-    except:
-        return "LOSS"
+    return "WIN" if c < o else "LOSS"
 
 # =========================
 # BOTÕES
@@ -122,101 +139,99 @@ def restart_btn():
 
 def menu_paridades():
     kb = telebot.types.InlineKeyboardMarkup(row_width=2)
-
-    for sym, name in SYMBOLS.items():
-        kb.add(telebot.types.InlineKeyboardButton(name, callback_data=f"par_{sym}"))
-
+    for coin_id, name in SYMBOLS.items():
+        kb.add(telebot.types.InlineKeyboardButton(name, callback_data=f"par_{coin_id}"))
     return kb
 
 
-def menu_exp(symbol):
+def menu_exp(coin_id):
     kb = telebot.types.InlineKeyboardMarkup()
     kb.add(
-        telebot.types.InlineKeyboardButton("⚡ 1 Minuto", callback_data=f"exp_{symbol}_1"),
-        telebot.types.InlineKeyboardButton("🕐 5 Minutos", callback_data=f"exp_{symbol}_5")
+        telebot.types.InlineKeyboardButton("⚡ 1 Minuto", callback_data=f"exp_{coin_id}_1"),
+        telebot.types.InlineKeyboardButton("🕐 5 Minutos", callback_data=f"exp_{coin_id}_5")
     )
     return kb
 
 # =========================
-# FLUXO
+# FLUXO PRINCIPAL
 # =========================
 
-def run_signal(chat_id, symbol, exp):
+def run_signal(chat_id, coin_id, exp):
 
     def process():
 
         try:
-            with open(ANALISE_GIF, "rb") as gif:
-                bot.send_animation(chat_id, gif, caption="⏳ Analisando mercado...")
+            bot.send_animation(chat_id, open(ANALISE_GIF, "rb"), caption="⏳ Calculando horários...")
         except:
-            bot.send_message(chat_id, "⏳ Analisando...")
+            bot.send_message(chat_id, "⏳ Aguarde enquanto o Quantix está Analisando o mercado...")
 
-        time.sleep(2)
-
-        direction = analyze(symbol)
+        direction = analyze(coin_id)
 
         if not direction:
-            bot.send_message(chat_id, "❌ Sem sinal no momento")
+            bot.send_message(chat_id, "❌ Sem sinal forte agora!", reply_markup=restart_btn())
             return
 
-        entry_time = datetime.now().strftime("%H:%M:%S")
+        now = get_br_time()
+        entry_time, gale1_time = next_round_5(now)
 
         bot.send_message(
             chat_id,
-            f"""🚀 SINAL GERADO
+            f"""🚀 SINAL GERADO:
 ━━━━━━━━━━━━━━
-💱 {SYMBOLS[symbol]}
+💱 {SYMBOLS[coin_id]}
 ⏱ Entrada: {entry_time}
+📅 Gale 1: {gale1_time}
 🎯 Direção: {direction}
-⏳ Expiração: {exp} min""",
+⏳ Expiração: 5 min""",
             reply_markup=restart_btn()
         )
 
-        time.sleep(int(exp) * 60)
+        now_dt = datetime.strptime(now, "%H:%M")
+        entry_dt = datetime.strptime(entry_time, "%H:%M")
 
-        r1 = result(symbol, direction)
+        wait_entry = max(0, int((entry_dt - now_dt).total_seconds()))
+        time.sleep(wait_entry + int(exp) * 60)
+
+        r1 = result(coin_id, direction)
 
         if r1 == "WIN":
-            time.sleep(2)
-
-            try:
-                with open(WIN_GIF, "rb") as gif:
-                    bot.send_animation(chat_id, gif,
-                        caption=f"""🏁 WIN
+            time.sleep(3)
+            bot.send_animation(
+                chat_id,
+                open(WIN_GIF, "rb"),
+                caption=f"""🏁 WIN DIRETO!
 ━━━━━━━━━━━━━━
-💱 {SYMBOLS[symbol]}
+💱 {SYMBOLS[coin_id]}
+📊 {r1}
 ⏱ {entry_time}
 🎯 {direction}""",
-                        reply_markup=restart_btn()
-                    )
-            except:
-                bot.send_message(chat_id, "🏁 WIN")
-
+                reply_markup=restart_btn()
+            )
             return
 
         bot.send_message(chat_id, "⚠️ Entrando em Gale 1...")
 
-        time.sleep(int(exp) * 60)
+        gale1_dt = datetime.strptime(gale1_time, "%H:%M")
+        wait_gale = max(0, int((gale1_dt - datetime.now(BR_TZ).replace(tzinfo=None)).total_seconds()))
 
-        r2 = result(symbol, direction)
+        time.sleep(wait_gale + int(exp) * 60)
 
-        gif_path = WIN_GIF if r2 == "WIN" else LOSS_GIF
+        r2 = result(coin_id, direction)
+        time.sleep(3)
 
-        time.sleep(2)
+        gif = WIN_GIF if r2 == "WIN" else LOSS_GIF
 
-        try:
-            with open(gif_path, "rb") as gif:
-                bot.send_animation(chat_id, gif,
-                    caption=f"""🏁 FINAL {r2}
+        bot.send_animation(
+            chat_id,
+            open(gif, "rb"),
+            caption=f"""🏁 RESULTADO FINAL
 ━━━━━━━━━━━━━━
-💱 {SYMBOLS[symbol]}
-⏱ {entry_time}
-🎯 {direction}
-🔁 Gale 1""",
-                    reply_markup=restart_btn()
-                )
-        except:
-            bot.send_message(chat_id, f"🏁 {r2}")
+💱 {SYMBOLS[coin_id]}
+📊 {r2}
+⏱ Entrada: {entry_time} | Gale: {gale1_time}
+🎯 {direction} 🔁 Gale 1""",
+            reply_markup=restart_btn()
+        )
 
     threading.Thread(target=process, daemon=True).start()
 
@@ -231,35 +246,33 @@ def start(m):
 
     bot.send_message(
         m.chat.id,
-        "👋 Quantix Cripto pronto",
+        f"""👋 Seja bem vindo ao Quantix Cripto
+🇧🇷 {get_br_time()}""",
         reply_markup=kb
     )
-
 
 @bot.callback_query_handler(func=lambda c: c.data == "start")
 def start_flow(c):
     bot.answer_callback_query(c.id)
-    bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=menu_paridades())
-
+    bot.send_message(c.message.chat.id, "📊 Escolha a paridadeParidade:", reply_markup=menu_paridades())
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("par_"))
 def paridade(c):
     bot.answer_callback_query(c.id)
-    symbol = c.data.split("_")[1]
-    bot.send_message(c.message.chat.id, "⏳ Expiração:", reply_markup=menu_exp(symbol))
-
+    coin_id = c.data.split("_", 1)[1]
+    bot.send_message(c.message.chat.id, "⏳ Tempo de Expiração:", reply_markup=menu_exp(coin_id))
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("exp_"))
-def exp(c):
+def exp_handler(c):
     bot.answer_callback_query(c.id)
-    _, symbol, exp_time = c.data.split("_")
-    run_signal(c.message.chat.id, symbol, exp_time)
-
+    parts = c.data.split("_")
+    coin_id, exp = parts[1], parts[2]
+    run_signal(c.message.chat.id, coin_id, exp)
 
 @bot.callback_query_handler(func=lambda c: c.data == "restart")
 def restart(c):
     bot.answer_callback_query(c.id)
-    bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=menu_paridades())
+    bot.send_message(c.message.chat.id, "📊 Paridade:", reply_markup=menu_paridades())
 
-print("🚀 BOT ONLINE OK")
+print(f"🚀 BOT ONLINE - QUANTIX PREVISTO {get_br_time()}")
 bot.infinity_polling()
