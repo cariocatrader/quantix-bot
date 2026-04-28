@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 import pytz
 import math
+import traceback
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
@@ -20,8 +21,8 @@ def get_br_time(format_str="%H:%M"):
     return datetime.now(BR_TZ).strftime(format_str)
 
 def br_to_utc_timestamp(br_time_str):
-    """Converte HH:MM BR para timestamp UTC usando data atual"""
-    
+    """Timestamp usando data atual (corrigido)"""
+
     now_br = datetime.now(BR_TZ)
 
     br_dt = datetime.strptime(br_time_str, "%H:%M").replace(
@@ -36,6 +37,7 @@ def br_to_utc_timestamp(br_time_str):
     return int(utc_dt.timestamp() * 1000)
 
 def next_round_time(now_str, exp):
+
     now_dt = datetime.now(BR_TZ)
 
     now = datetime.strptime(now_str, "%H:%M").replace(
@@ -127,6 +129,10 @@ def analyze(coin_id):
 
         data = r.json()
 
+        if not isinstance(data, list) or len(data) < 3:
+            print("Erro CoinGecko: dados insuficientes")
+            return "COMPRA"
+
         closes = [
             candle[4]
             for candle in data[-3:]
@@ -139,7 +145,7 @@ def analyze(coin_id):
         )
 
     except:
-
+        traceback.print_exc()
         return "COMPRA"
 
 def get_binance_candle(symbol, br_time_str):
@@ -148,9 +154,7 @@ def get_binance_candle(symbol, br_time_str):
 
         target_utc_ms = br_to_utc_timestamp(br_time_str)
 
-        print(
-            f"🔍 Buscando {symbol} {br_time_str} BR = {target_utc_ms}"
-        )
+        print(f"🔍 Buscando {symbol} {br_time_str}")
 
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
 
@@ -167,9 +171,7 @@ def get_binance_candle(symbol, br_time_str):
                 o = float(candle[1])
                 c = float(candle[4])
 
-                print(
-                    f"✅ Candle encontrado {o} → {c}"
-                )
+                print(f"✅ Candle encontrado {o} → {c}")
 
                 return o, c
 
@@ -179,7 +181,7 @@ def get_binance_candle(symbol, br_time_str):
 
     except Exception as e:
 
-        print(f"Erro candle: {e}")
+        traceback.print_exc()
 
         return None, None
 
@@ -196,15 +198,9 @@ def get_result(symbol, direction, br_time_str):
     win = (
 
         (direction == "COMPRA" and c > o)
-
         or
-
         (direction == "VENDA" and c < o)
 
-    )
-
-    print(
-        f"📊 RESULT {br_time_str}: {o} → {c}"
     )
 
     return "WIN" if win else "LOSS"
@@ -270,21 +266,16 @@ def run_signal(chat_id, coin_id, exp, message_id=None):
         try:
 
             if message_id:
+                bot.delete_message(chat_id, message_id)
 
-                bot.delete_message(
+            # GIF análise corrigido
+            with open(ANALISE_GIF, "rb") as gif:
+                bot.send_animation(
                     chat_id,
-                    message_id
+                    gif,
+                    caption="🔍 *Aguarde enquanto o Quantix Cripto busca a melhor entrada...*",
+                    parse_mode="Markdown"
                 )
-
-            bot.send_animation(
-
-                chat_id,
-
-                open(ANALISE_GIF, "rb"),
-
-                caption="🔍 *Aguarde enquanto o Quantix Cripto busca a melhor entrada...*"
-
-            )
 
             direction = analyze(coin_id)
 
@@ -321,200 +312,14 @@ f"""🎉 *SINAL ENCONTRADO!*
 
             )
 
-            now_dt = datetime.now(BR_TZ)
-
-            entry_dt = datetime.strptime(
-                entry_time,
-                "%H:%M"
-            ).replace(
-
-                year=now_dt.year,
-                month=now_dt.month,
-                day=now_dt.day
-
-            )
-
-            entry_dt = BR_TZ.localize(entry_dt)
-
-            wait_entry = max(
-
-                1,
-
-                int(
-                    (entry_dt - now_dt).total_seconds()
-                )
-
-                + (exp_min * 60)
-
-            )
-
-            time.sleep(wait_entry)
-
-            r1 = get_result(
-                symbol,
-                direction,
-                entry_time
-            )
-
-            if r1 == "WIN":
-
-                bot.delete_message(
-                    chat_id,
-                    signal_msg.message_id
-                )
-
-                time.sleep(3)
-
-                bot.send_animation(
-
-                    chat_id,
-
-                    open(WIN_GIF, "rb"),
-
-caption=f"""🎊 *WIN DIRETO!*
-
-**━━━━━━━━━━━━━━━━━━**
-💱 `{SYMBOLS[coin_id]}`
-✅ *{r1}*
-⏱ `{entry_time}`
-🎯 `{direction}`
-
-**Parabéns! Operação perfeita** 🏆""",
-
-                    parse_mode="Markdown",
-
-                    reply_markup=restart_btn()
-
-                )
-
-                return
-
-            bot.delete_message(
-                chat_id,
-                signal_msg.message_id
-            )
-
-            bot.send_message(
-
-                chat_id,
-
-"""😔 *Entrada Principal LOSS*
-
-Infelizmente a entrada principal deu LOSS. 
-
-⚠️ *Entrando em Gale 1 agora...*
-
-Mantenha a calma, recuperação em andamento! 💪"""
-
-            )
-
-            now_after_entry = datetime.now(BR_TZ)
-
-            gale_dt = datetime.strptime(
-                gale_time,
-                "%H:%M"
-            ).replace(
-
-                year=now_after_entry.year,
-                month=now_after_entry.month,
-                day=now_after_entry.day
-
-            )
-
-            gale_dt = BR_TZ.localize(gale_dt)
-
-            wait_gale = max(
-
-                1,
-
-                int(
-                    (gale_dt - now_after_entry).total_seconds()
-                )
-
-                + (exp_min * 60)
-
-            )
-
-            time.sleep(wait_gale)
-
-            r2 = get_result(
-                symbol,
-                direction,
-                gale_time
-            )
-
-            time.sleep(3)
-
-            if r2 == "WIN":
-
-                bot.send_animation(
-
-                    chat_id,
-
-                    open(WIN_GIF, "rb"),
-
-caption=f"""🎉 *GALE 1 - VITÓRIA!*
-
-**━━━━━━━━━━━━━━━━━━**
-💱 `{SYMBOLS[coin_id]}`
-✅ *{r2}*
-⏱ `{entry_time}` → `{gale_time}`
-🎯 `{direction}`
-
-**Recuperação completa!** 🔥""",
-
-                    parse_mode="Markdown",
-
-                    reply_markup=restart_btn()
-
-                )
-
-            else:
-
-                bot.send_animation(
-
-                    chat_id,
-
-                    open(LOSS_GIF, "rb"),
-
-caption=f"""💔 *GALE 1 - LOSS FINAL*
-
-**━━━━━━━━━━━━━━━━━━**
-💱 `{SYMBOLS[coin_id]}`
-❌ *{r2}*
-⏱ `{entry_time}` → `{gale_time}`
-🎯 `{direction}`
-
-**Nova oportunidade aguarda...** 📈""",
-
-                    parse_mode="Markdown",
-
-                    reply_markup=restart_btn()
-
-                )
-
         except Exception as e:
 
-            print(f"Erro: {e}")
-
-            if message_id:
-
-                try:
-                    bot.delete_message(
-                        chat_id,
-                        message_id
-                    )
-                except:
-                    pass
+            traceback.print_exc()
 
             bot.send_message(
-
                 chat_id,
-
                 "❌ Erro. Tente novamente!",
-
                 reply_markup=restart_btn()
-
             )
 
     threading.Thread(
@@ -656,14 +461,11 @@ def restart(c):
 
     )
 
-print(f"🚀 QUANTIX TIMESTAMP CORRIGIDO {get_br_time()}")
+print(f"🚀 QUANTIX ATIVO {get_br_time()}")
 
-print("🧹 Removendo webhook antigo...")
 bot.remove_webhook()
 
 time.sleep(2)
-
-print("🚀 Iniciando polling...")
 
 bot.infinity_polling(
     timeout=60,
