@@ -41,39 +41,50 @@ WIN_GIF = "win.gif"
 LOSS_GIF = "loss.gif"
 
 # =========================
-# BINANCE
+# API MEXC / BINANCE FALLBACK
 # =========================
 
-def get_candle(symbol):
+def get_candle(symbol, limit=5):
     try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=2"
-        r = requests.get(url, timeout=5)
+        url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
+        r = requests.get(url, timeout=10)
         data = r.json()
 
-        candle = data[-2]
+        if not data or len(data) < 3:
+            raise Exception("MEXC vazio")
 
-        return float(candle[1]), float(candle[4])
+        return data
 
-    except Exception as e:
-        print("Erro candle:", e)
-        return None
+    except:
+        try:
+            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
+            r = requests.get(url, timeout=5)
+            return r.json()
+        except:
+            return None
 
 # =========================
 # ANALISE
 # =========================
 
 def analyze(symbol):
-    candle = get_candle(symbol)
+    data = get_candle(symbol, limit=10)
 
-    if not candle:
+    if not data or len(data) < 4:
         return None
 
-    o, c = candle
+    for i in range(-4, -1):
+        try:
+            o = float(data[i][1])
+            c = float(data[i][4])
 
-    if c > o:
-        return "COMPRA"
-    elif c < o:
-        return "VENDA"
+            pct = abs((c - o) / o * 100)
+
+            if pct >= 0.01:
+                return "COMPRA" if c > o else "VENDA"
+
+        except:
+            continue
 
     return None
 
@@ -82,49 +93,38 @@ def analyze(symbol):
 # =========================
 
 def result(symbol, direction):
-    candle = get_candle(symbol)
+    data = get_candle(symbol, limit=3)
 
-    if not candle:
+    if not data:
         return "LOSS"
 
-    o, c = candle
+    try:
+        o = float(data[-2][1])
+        c = float(data[-2][4])
 
-    if direction == "COMPRA":
-        return "WIN" if c > o else "LOSS"
+        if direction == "COMPRA":
+            return "WIN" if c >= o else "LOSS"
 
-    if direction == "VENDA":
-        return "WIN" if c < o else "LOSS"
+        return "WIN" if c <= o else "LOSS"
 
-    return "LOSS"
+    except:
+        return "LOSS"
 
 # =========================
-# BOTÃO RESTART
+# BOTÕES
 # =========================
 
 def restart_btn():
     kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(
-        telebot.types.InlineKeyboardButton(
-            "🚀 Gerar novo sinal",
-            callback_data="restart"
-        )
-    )
+    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar novo sinal", callback_data="restart"))
     return kb
 
-# =========================
-# MENUS
-# =========================
 
 def menu_paridades():
     kb = telebot.types.InlineKeyboardMarkup(row_width=2)
 
     for sym, name in SYMBOLS.items():
-        kb.add(
-            telebot.types.InlineKeyboardButton(
-                name,
-                callback_data=f"par_{sym}"
-            )
-        )
+        kb.add(telebot.types.InlineKeyboardButton(name, callback_data=f"par_{sym}"))
 
     return kb
 
@@ -138,26 +138,18 @@ def menu_exp(symbol):
     return kb
 
 # =========================
-# FLUXO PRINCIPAL
+# FLUXO
 # =========================
 
-def run_signal(chat_id, symbol, exp_time):
+def run_signal(chat_id, symbol, exp):
 
     def process():
 
-        # =========================
-        # ANÁLISE
-        # =========================
-
         try:
             with open(ANALISE_GIF, "rb") as gif:
-                bot.send_animation(
-                    chat_id,
-                    gif,
-                    caption="⏳ Quantix Cripto analisando a melhor entrada..."
-                )
+                bot.send_animation(chat_id, gif, caption="⏳ Analisando mercado...")
         except:
-            bot.send_message(chat_id, "⏳ Analisando mercado...")
+            bot.send_message(chat_id, "⏳ Analisando...")
 
         time.sleep(2)
 
@@ -176,36 +168,25 @@ def run_signal(chat_id, symbol, exp_time):
 💱 {SYMBOLS[symbol]}
 ⏱ Entrada: {entry_time}
 🎯 Direção: {direction}
-⏳ Expiração: {exp_time} min"""
+⏳ Expiração: {exp} min""",
+            reply_markup=restart_btn()
         )
 
-        # =========================
-        # ESPERA
-        # =========================
-
-        time.sleep(int(exp_time) * 60)
+        time.sleep(int(exp) * 60)
 
         r1 = result(symbol, direction)
 
-        # =========================
-        # WIN DIRETO
-        # =========================
-
         if r1 == "WIN":
-
             time.sleep(2)
 
             try:
                 with open(WIN_GIF, "rb") as gif:
-                    bot.send_animation(
-                        chat_id,
-                        gif,
-                        caption=f"""🏁 RESULTADO FINAL
+                    bot.send_animation(chat_id, gif,
+                        caption=f"""🏁 WIN
 ━━━━━━━━━━━━━━
 💱 {SYMBOLS[symbol]}
-📊 WIN
-⏱ Entrada: {entry_time}
-🎯 Direção: {direction}""",
+⏱ {entry_time}
+🎯 {direction}""",
                         reply_markup=restart_btn()
                     )
             except:
@@ -213,31 +194,24 @@ def run_signal(chat_id, symbol, exp_time):
 
             return
 
-        # =========================
-        # GALE 1
-        # =========================
-
         bot.send_message(chat_id, "⚠️ Entrando em Gale 1...")
 
-        time.sleep(int(exp_time) * 60)
+        time.sleep(int(exp) * 60)
 
         r2 = result(symbol, direction)
 
-        gif = WIN_GIF if r2 == "WIN" else LOSS_GIF
+        gif_path = WIN_GIF if r2 == "WIN" else LOSS_GIF
 
         time.sleep(2)
 
         try:
-            with open(gif, "rb") as g:
-                bot.send_animation(
-                    chat_id,
-                    g,
-                    caption=f"""🏁 RESULTADO FINAL
+            with open(gif_path, "rb") as gif:
+                bot.send_animation(chat_id, gif,
+                    caption=f"""🏁 FINAL {r2}
 ━━━━━━━━━━━━━━
 💱 {SYMBOLS[symbol]}
-📊 {r2}
-⏱ Entrada: {entry_time}
-🎯 Direção: {direction}
+⏱ {entry_time}
+🎯 {direction}
 🔁 Gale 1""",
                     reply_markup=restart_btn()
                 )
@@ -247,78 +221,45 @@ def run_signal(chat_id, symbol, exp_time):
     threading.Thread(target=process, daemon=True).start()
 
 # =========================
-# START
+# HANDLERS
 # =========================
 
 @bot.message_handler(commands=["start"])
 def start(m):
-
     kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(
-        telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="start")
-    )
+    kb.add(telebot.types.InlineKeyboardButton("🚀 Gerar sinal", callback_data="start"))
 
     bot.send_message(
         m.chat.id,
-        """👋 Bem-vindo ao Quantix Cripto
-Clique abaixo para começar""",
+        "👋 Quantix Cripto pronto",
         reply_markup=kb
     )
 
-# =========================
-# INICIO FLUXO
-# =========================
 
 @bot.callback_query_handler(func=lambda c: c.data == "start")
 def start_flow(c):
     bot.answer_callback_query(c.id)
     bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=menu_paridades())
 
-# =========================
-# PARIDADE
-# =========================
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("par_"))
 def paridade(c):
     bot.answer_callback_query(c.id)
-
     symbol = c.data.split("_")[1]
+    bot.send_message(c.message.chat.id, "⏳ Expiração:", reply_markup=menu_exp(symbol))
 
-    bot.send_message(
-        c.message.chat.id,
-        "⏳ Escolha a expiração:",
-        reply_markup=menu_exp(symbol)
-    )
-
-# =========================
-# EXPIRAÇÃO
-# =========================
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("exp_"))
 def exp(c):
     bot.answer_callback_query(c.id)
-
     _, symbol, exp_time = c.data.split("_")
-
     run_signal(c.message.chat.id, symbol, exp_time)
 
-# =========================
-# RESTART
-# =========================
 
 @bot.callback_query_handler(func=lambda c: c.data == "restart")
 def restart(c):
     bot.answer_callback_query(c.id)
+    bot.send_message(c.message.chat.id, "📊 Escolha a paridade:", reply_markup=menu_paridades())
 
-    bot.send_message(
-        c.message.chat.id,
-        "📊 Escolha a paridade:",
-        reply_markup=menu_paridades()
-    )
-
-# =========================
-# LOOP
-# =========================
-
-print("🚀 BOT ONLINE - QUANTIX CRIPTO")
+print("🚀 BOT ONLINE OK")
 bot.infinity_polling()
